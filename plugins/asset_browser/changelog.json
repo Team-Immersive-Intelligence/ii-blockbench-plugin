@@ -1,0 +1,82 @@
+{
+  "1.0.0": {
+    "title": "1.0.0",
+    "date": "2025-05-30",
+    "author": "Ewan Howell",
+    "categories": [
+      {
+        "title": "New Features",
+        "list": [
+          "Initial release"
+        ]
+      }
+    ]
+  },
+  "1.1.0": {
+    "title": "1.1.0",
+    "date": "2025-06-03",
+    "author": "Ewan Howell",
+    "categories": [
+      {
+        "title": "Changes",
+        "list": [
+          "Renamed Java edition categories to make them more consistent with Bedrock edition categories"
+        ]
+      },
+      {
+        "title": "Bug Fixes",
+        "list": [
+          "Fixed texture mesh elements showing a data URL instead of the item model name when opening generated item models"
+        ]
+      },
+      {
+        "title": "Techinical Changes",
+        "list": [
+          "The cache folder has been moved to the AppData folder and is no longer required to be specified by the user",
+          "The \"Minecraft Directory\" setting ID has been made more unique as to not conflict if other plugins use the same ID"
+        ]
+      }
+    ]
+  },
+  "1.2.0": {
+    "title": "1.2.0",
+    "date": "2025-10-12",
+    "author": "Ewan Howell",
+    "categories": [
+      {
+        "title": "Changes",
+        "list": [
+          "Support for Blockbench v5.0.0"
+        ]
+      }
+    ]
+  },
+  "1.2.1": {
+    "title": "1.2.1",
+    "date": "2025-10-16",
+    "author": "Ewan Howell",
+    "categories": [
+      {
+        "title": "Bug Fixes",
+        "list": [
+          "Fixed select menu styling"
+        ]
+      }
+    ]
+  },
+  "1.2.2": {
+    "title": "1.2.2",
+    "date": "2026-04-02",
+    "author": "Ewan Howell",
+    "categories": [
+      {
+        "title": "Bug Fixes",
+        "list": [
+          "Fixed wrong icons showing for full major version Java Edition pre-releases and release candidates",
+          "Fixed to support new Minecraft version numbering system",
+          "Fixed version select dropdowns not updating their displayed value"
+        ]
+      }
+    ]
+  }
+}

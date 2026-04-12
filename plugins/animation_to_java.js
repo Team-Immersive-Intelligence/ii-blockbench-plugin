@@ -8,10 +8,12 @@
             "Converts Blockbench animations to Java code for the new 1.19+ keyframe system.",
         icon: "fa-cube",
         version: "1.2.0",
+        max_version: "4.12.9",
         variant: "both",
         about:
             "This plugin exports your Blockbench animations as Java code to be used for the new 1.19+ keyframe system. Please note that this system does not support Molang or step interpolation.",
-        tags: ["Minecraft: Java Edition"],
+        tags: ["Deprecated", "Minecraft: Java Edition"],
+        deprecation_note: 'This feature is now built into Blockbench, the plugin is no longer required.',
         onload() {
             Formats.modded_entity.animation_mode = true
             menuButton = new Action("export_animation_to_java", {

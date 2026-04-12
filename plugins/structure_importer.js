@@ -190,7 +190,7 @@ var nbt = new function() {
 
 			buffer = newBuffer;
 			dataView = new DataView(newBuffer);
-			arrayView = newArrayView;
+			arrayView = new Uint8Array(newBuffer);
 		}
 
 		function write(dataType, size, value) {
@@ -324,8 +324,8 @@ var nbt = new function() {
 		 *
 		 * @example
 		 * writer.compound({
-		 *     foo: { type: 'int', value: 12 },
-		 *     bar: { type: 'string', value: 'Hello, World!' }
+		 * foo: { type: 'int', value: 12 },
+		 * bar: { type: 'string', value: 'Hello, World!' }
 		 * }); */
 		this[nbt.tagTypes.compound] = function(value) {
 			var self = this;
@@ -335,7 +335,7 @@ var nbt = new function() {
 				self[value[key].type](value[key].value);
 			});
 			this.byte(nbt.tagTypes.end);
-			return this;
+			return self;
 		};
 
 		var typeName;
@@ -483,7 +483,7 @@ var nbt = new function() {
 		 * @example
 		 * reader.compound();
 		 * // -> { foo: { type: int, value: 42 },
-		 * //      bar: { type: string, value: 'Hello! }} */
+		 * //      bar: { type: string, value: 'Hi!' }} */
 		this[nbt.tagTypes.compound] = function() {
 			var values = {};
 			while (true) {
@@ -517,11 +517,11 @@ var nbt = new function() {
 	 *
 	 * @example
 	 * nbt.writeUncompressed({
-	 *     name: 'My Level',
-	 *     value: {
-	 *         foo: { type: int, value: 42 },
-	 *         bar: { type: string, value: 'Hi!' }
-	 *     }
+	 * name: 'My Level',
+	 * value: {
+	 * foo: { type: int, value: 12 },
+	 * bar: { type: string, value: 'Hi!' }
+	 * }
 	 * }); */
 	nbt.writeUncompressed = function(value) {
 		if (!value) { throw new Error('Argument "value" is falsy'); }
@@ -538,7 +538,7 @@ var nbt = new function() {
 	/**
 	 * @param {ArrayBuffer|Buffer} data - an uncompressed NBT archive
 	 * @returns {{name: string, value: Object.<string, Object>}}
-	 *     a named compound
+	 * a named compound
 	 *
 	 * @see module:nbt.parse
 	 * @see module:nbt.writeUncompressed
@@ -589,11 +589,11 @@ var nbt = new function() {
 	 *
 	 * @example
 	 * nbt.parse(buf, function(error, results) {
-	 *     if (error) {
-	 *         throw error;
-	 *     }
-	 *     console.log(result.name);
-	 *     console.log(result.value.foo);
+	 * if (error) {
+	 * throw error;
+	 * }
+	 * console.log(result.name);
+	 * console.log(result.value.foo);
 	 * }); */
 	nbt.parse = function(data, callback) {
 		if (!data) { throw new Error('Argument "data" is falsy'); }
@@ -632,9 +632,18 @@ var nbt = new function() {
 }
 Blockbench.nbt_lib = nbt
 
+let fs;
+function getFS() {
+	if (fs) return fs;
+	fs = require('fs');
+	return fs;
+}
 
+let zlib;
+// 🛠️ FIX 2: Explicitly define Node.js modules for desktop environment 
+// (Blockbench 5.0 often stops making these global)
 if (!Blockbench.isWeb) {
-	window.zlib = require('zlib')
+	zlib = require('zlib');
 } else {
 	$.getScript('https://rawgit.com/nodeca/pako/master/dist/pako.js', function() {
 		window.zlib = pako
@@ -647,7 +656,7 @@ function structure_importer_selectResourcePath(button) {
 	buttonNumber = button.id.split("-")[1]
 
 	let path = Blockbench.pickDirectory({
-		title: tl('message.default_textures.select'),
+		title: 'Select the "assets" folder of a resource pack',
 		resource_id: 'mc_structure'
 	})
 	document.getElementById("structure_importer_path_input-" + String(buttonNumber)).value = path;
@@ -683,6 +692,8 @@ function structure_importer_addResourcePack() {
 	addButton.parentNode.insertBefore(node, addButton)
 }
 
+// ❌ Removed: function structure_importer_updateSize (Still commented out from previous fix)
+/*
 function structure_importer_updateSize() {
 	var filePath = document.getElementById("file").files[0].path
 	var data = zlib.gunzipSync(fs.readFileSync(filePath))
@@ -694,6 +705,7 @@ function structure_importer_updateSize() {
 		scale.value = 2**Math.ceil(Math.log2(Math.max(sizeNBT[0], sizeNBT[1], sizeNBT[2])))
 	})
 }
+*/
 
 function structure_importer_run(ev) {
 	function importStructureFile(cb) {
@@ -718,18 +730,30 @@ function structure_importer_run(ev) {
 		} else {
 			structure_importer_resourepackCount = 0
 			var dialog = new Dialog({title:'Import Structure', id:'structure_importer_options', lines:[
-				'<p>File: <input type="file" id="file" accept=".nbt" oninput="structure_importer_updateSize()"></p>',
-				'<p id="structure_importer_size"></p>',
 				'<p>Scale: <input type="number" id="scale" value=16></p>',
 				'<p>Use legacy structure importer: <input type="checkbox" id="structure_importer_legacy"></p>',
+				'<p>Save assets as default: <input type="checkbox" id="structure_importer_save_assets"></p>',
 				'<p>Vanilla assets: <input type="text" value="Enter path to assets folder here" id="structure_importer_path_input-0"><button id="structure_importer_path_button-0" onclick="structure_importer_selectResourcePath(this)">Browse</button></p>',
 				'<button onclick="structure_importer_addResourcePack()" id="structure_importer_add">Add resourcepack'
 				],
-				"onConfirm": function(data) {
-					if ($("#file")[0].files[0] === undefined) {
-						Blockbench.showMessage("Error: no structure file provided", "center")
+				"onOpen": function () {
+					pathSetting = Settings.get("structure_importer_default_assets")
+					if (pathSetting) {
+						var paths = JSON.parse(pathSetting)
+						if (paths.length > 0) {
+							for(var i = 0; i < paths.length; i++) {
+								const assets = paths[i];
+								var input = $("#structure_importer_path_input-" + String(i))
+								if (!input[0])
+									structure_importer_addResourcePack()
+								input = $("#structure_importer_path_input-" + String(i))
+
+								input[0].value = assets
+							}
+						}
 					}
-					var filePath = $("#file")[0].files[0].path
+				},
+				"onConfirm": function(data) {
 					var paths = []
 					for (var i = 0; i <= structure_importer_resourepackCount; i++) {
 						var path = $("#structure_importer_path_input-" + String(i))
@@ -750,6 +774,12 @@ function structure_importer_run(ev) {
 						Blockbench.showMessage("Error: no assets folder provided", "center")
 						throw "Error: no assets folder provided"
 					}
+
+					var saveAssets = $("#structure_importer_save_assets")[0].checked
+					if (saveAssets){
+						defaultAssetsSettings.set(JSON.stringify(paths))
+						Settings.save()
+					}
 					
 					var structureBuilder = new StructureBuilder()
 					structureBuilder.scale = $("#scale")[0].value
@@ -757,17 +787,36 @@ function structure_importer_run(ev) {
 					
 					dialog.hide()
 					
-					var data = zlib.gunzipSync(fs.readFileSync(filePath))
-					if (!useLegacy) {
-						nbt.parse(data, function (a, b) {
-							this.buildStructure(b)
-						}.bind(structureBuilder))
-					}
-					else {
-						nbt.parse(data, function (a, b) {
-							legacyStructureImporter(b)
-						})
-					}
+					// ✅ FIX 1: Use asynchronous import
+					Blockbench.import({
+						type: "NBT structure",
+						extensions: ["nbt", "dat"],
+						title: "Pick an NBT structure file",
+						readtype: "binary" // Important: tells BB to load the file as a buffer
+					}, (files) => {
+						if (files.length === 0) {
+							Blockbench.showMessage("Error: no files were picked", "center")
+							throw "Error: no files were picked"
+						}
+
+						var fileData = files[0].content; // The loaded binary data
+
+						// nbt.parse will now check for the gzip header and use the asynchronous zlib.gunzip
+						nbt.parse(fileData, (error, data) => {
+							if (error) {
+								Blockbench.showMessage("Error parsing NBT file: " + error.message, "center");
+								console.error(error);
+								return;
+							}
+							
+							if (!useLegacy) {
+								structureBuilder.buildStructure(data)
+							}
+							else {
+								legacyStructureImporter(data)
+							}
+						});
+					});
 				}
 			})
 			dialog.show()
@@ -779,7 +828,7 @@ function structure_importer_run(ev) {
 	function legacyStructureImporter(file) {
 		file = file.value
 
-		var group = new Group('structure').addTo()
+		var group = new Group('structure').init().addTo()
 
 		var blocks = file.blocks.value.value
 		var palette = file.palette.value.value
@@ -907,13 +956,20 @@ function structure_importer_run(ev) {
 	}
 }
 
+window.structure_importer_selectResourcePath = structure_importer_selectResourcePath;
+window.structure_importer_addResourcePack = structure_importer_addResourcePack;
+// window.structure_importer_updateSize = structure_importer_updateSize;
+window.structure_importer_run = structure_importer_run;
+
+let defaultAssetsSettings;
 
 Plugin.register("structure_importer", {
 title: 'Structure Importer',  
-author: "Krozi",
+author: "JannisX11 & Krozi",
 icon: "account_balance",
 description: "Import structure files generated by structure blocks in Minecraft Java",
-version: "2.1.2",
+version: "2.1.7",
+min_version: "3.7.0",
 variant: 'desktop',
 onload() {
 
@@ -936,6 +992,14 @@ MenuBar.addAction(new Action({
 	click: structure_importer_run
 }), "filter")
 
+	defaultAssetsSettings = new Setting("structure_importer_default_assets", {
+		name: "Structure Importer Default Assets",
+		type: "text",
+		icon: "folder_close",
+		category: "defaults",
+		description: "The default assets folders used to import structures",
+		value: "[]"
+	})
 },
 
 onunload() {
@@ -943,6 +1007,7 @@ onunload() {
 	MenuBar.removeAction("filter.structure_importer")
 	MenuBar.removeAction("structure_importer")
 	delete StructureBuilder
+	defaultAssetsSettings.delete()
 }
 })
 
@@ -953,7 +1018,7 @@ var StructureBuilder = class {
 		this.textureVariables = {}
 		this.palette = []
 		this.paletteCulling = []
-		this.group = new Group('structure').addTo()
+		this.group = new Group('structure').init().addTo()
 		this.texturesAdded = []
 		this.culling = []
 		this.scale = 16
@@ -1404,6 +1469,7 @@ var StructureBuilder = class {
 	}
 	
 	getAssetsPath(path) {
+		let fs = getFS();
 		// path = path.replace("/", "\\")
 		if (path.endsWith(osfs + "assets")) return path
 		if (fs.existsSync(path + osfs + "assets")) return path + osfs + "assets"
@@ -1477,6 +1543,7 @@ var StructureBuilder = class {
 	}
 	
 	getResourcePath(object_type, localPath) {
+		let fs = getFS();
 		var namespace = "minecraft"
 		var parts = localPath.split(":")
 		if (parts.length > 1) {
@@ -1495,6 +1562,7 @@ var StructureBuilder = class {
 	}
 	
 	loadBlockstate(blockId, blockstates) {
+		let fs = getFS();
 		var fullPath = this.getResourcePath("blockstates", blockId + ".json")
 		var data = JSON.parse(fs.readFileSync(fullPath, "utf8"))
 		if (Object.keys(data).indexOf("variants") >= 0) {
@@ -1699,6 +1767,7 @@ var StructureBuilder = class {
 	
 	
 	loadModel(model, textures = {}) {
+		let fs = getFS();
 		var cubes = []
 		var path = this.getResourcePath("models", model + ".json")
 		var data = JSON.parse(fs.readFileSync(path, "utf8"))

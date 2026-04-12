@@ -1,5 +1,3 @@
-(function() {
-
 let deletables = [];
 
 BBPlugin.register('cameras', {
@@ -8,7 +6,7 @@ BBPlugin.register('cameras', {
 	author: 'JannisX11',
 	description: 'Adds cameras to Blockbench. Cameras allow you to view the model from different angles, and can be animated to create camera paths.',
 	about: 'Cameras can be added through the Edit menu. Enabling Split Screen from View > Split Screen is recommended to preview what the camera can see while editing it. Right-click the camera in the viewport to link or unlink it to the viewport.',
-	version: '1.1.0',
+	version: '1.2.2',
 	min_version: '4.3.0',
 	variant: 'both',
 	onload() {
@@ -70,7 +68,7 @@ BBPlugin.register('cameras', {
 					Timeline.selected_animator.selected = false;
 				}
 			}		
-			updatePreviewCamera() {
+			updatePreviewCamera(fov) {
 				if (this.linked_preview) {
 					let preview = Preview.all.find(preview => preview.id == this.linked_preview);
 					if (!preview) return;
@@ -84,9 +82,18 @@ BBPlugin.register('cameras', {
 					preview.controls.target.copy(preview.camera.position);
 					let offset = Reusable.vec1.set(0, 0, -16).applyQuaternion(preview.camera.quaternion);
 					preview.controls.target.add(offset);
+
+					let preview_fov = (fov || this.fov) * 1.001; // padding to fix flickering with viewport border
+					preview.setFOV(preview_fov);
 				}
 			}
+			static behavior = {
+				unique_name: true,
+				movable: true,
+				rotatable: true,
+			}
 		}
+		window.CameraElement = CameraElement;
 		
 		/*Outliner.buttons.camera_linked = {
 			id: 'camera_linked',
@@ -104,6 +111,7 @@ BBPlugin.register('cameras', {
 			CameraElement.prototype.menu = new Menu([
 				'link_camera_to_preview',
 				'camera_to_view',
+				'edit_camera_properties',
 				'_',
 				...Outliner.control_menu_group,
 				'_',
@@ -118,14 +126,56 @@ BBPlugin.register('cameras', {
 			];
 		
 		new Property(CameraElement, 'string', 'name', {default: 'camera'})
-		new Property(CameraElement, 'string', 'path')
 		new Property(CameraElement, 'vector', 'position');
 		new Property(CameraElement, 'vector', 'rotation');
+		new Property(CameraElement, 'number', 'fov', {
+			default: 70,
+			inputs: {
+				element_panel: {
+					input: {label: 'FOV', type: 'number', min: 1, max: 160},
+					onChange() {
+						Canvas.updateView({elements: CameraElement.selected, element_aspects: {transform: true}});
+					}
+				}
+			}
+		});
+		new Property(CameraElement, 'vector2', 'aspect_ratio', {
+			default: [16, 9],
+			inputs: {
+				element_panel: {
+					input: {label: 'Aspect Ratio', type: 'vector', dimensions: 2},
+					onChange() {
+						Canvas.updateView({elements: CameraElement.selected, element_aspects: {transform: true}});
+					}
+				}
+			}
+		});
 		new Property(CameraElement, 'string', 'linked_preview');
 		new Property(CameraElement, 'boolean', 'camera_linked');
 		new Property(CameraElement, 'boolean', 'visibility', {default: true});
 		
 		OutlinerElement.registerType(CameraElement, 'camera');
+
+		function getFrameVertices(camera, fov) {
+			let r = 6;
+			let deg = Math.degToRad(fov ?? camera.fov) / 2;
+			let ratio = camera.aspect_ratio[0] / camera.aspect_ratio[1];
+			let h = r * Math.sin(deg);
+			let d = r * Math.cos(deg);
+			let w = h * ratio;
+
+			let vertices = [
+				0, 0, 0, -w, -h, -d,
+				0, 0, 0,  w, -h, -d,
+				0, 0, 0, -w,  h, -d,
+				0, 0, 0,  w,  h, -d,
+				-w, -h, -d,  w, -h, -d,
+				-w,  h, -d,  w,  h, -d,
+				-w,  h, -d, -w, -h, -d,
+				 w,  h, -d,  w, -h, -d,
+			];
+			return vertices;
+		}
 		
 		new NodePreviewController(CameraElement, {
 			setup(element) {
@@ -141,17 +191,8 @@ BBPlugin.register('cameras', {
 				mesh.rotation.order = 'ZYX';
 				mesh.geometry.translate(0, 0, -0.5)
 		
+				let vertices = getFrameVertices(element, element.fov);
 				let geometry = new THREE.BufferGeometry();
-				let vertices = [
-					0, 0, 0, -3, -1.8, -6,
-					0, 0, 0,  3, -1.8, -6,
-					0, 0, 0, -3,  1.8, -6,
-					0, 0, 0,  3,  1.8, -6,
-					-3, -1.8, -6,  3, -1.8, -6,
-					-3,  1.8, -6,  3,  1.8, -6,
-					-3,  1.8, -6, -3, -1.8, -6,
-					 3,  1.8, -6,  3, -1.8, -6,
-				];
 				geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices, 3 ) );
 				mesh.line_material = new THREE.LineBasicMaterial({color: gizmo_colors.grid});
 				
@@ -173,9 +214,16 @@ BBPlugin.register('cameras', {
 				element.mesh.fix_position.copy(element.mesh.position);
 				element.mesh.fix_rotation.copy(element.mesh.rotation);
 
+				this.updateGeometry(element);
+
 				element.updatePreviewCamera();
 	
 				this.dispatchEvent('update_transform', {element});
+			},
+			updateGeometry(element) {
+				let vertices = getFrameVertices(element, element.mesh.fov ?? element.fov);
+				element.mesh.outline.geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+				this.dispatchEvent('update_geometry', {element});
 			},
 			updateSelection(element) {
 				let {mesh} = element;
@@ -185,6 +233,19 @@ BBPlugin.register('cameras', {
 				this.dispatchEvent('update_selection', {element});
 			}
 		})
+
+		let old_y_condition = KeyframeDataPoint.properties.y.condition;
+		let old_z_condition = KeyframeDataPoint.properties.z.condition;
+		KeyframeDataPoint.properties.y.condition = (point) => {
+			return point.keyframe.channel == 'fov' ? false : old_y_condition(point);
+		}
+		KeyframeDataPoint.properties.z.condition = (point) => {
+			return point.keyframe.channel == 'fov' ? false : old_z_condition(point);
+		}
+		let old_x_default = KeyframeDataPoint.properties.x.default;
+		KeyframeDataPoint.properties.x.default = (point) => {
+			return point.keyframe.channel == 'fov' ? (point.keyframe.animator.element?.fov || 70) : old_x_default(point);
+		}
 
 		let add_action = new Action('add_camera', {
 			name: 'Add Camera',
@@ -205,7 +266,7 @@ BBPlugin.register('cameras', {
 					})
 				}
 	
-				if (Group.selected) Group.selected.unselect()
+				unselectAll();
 				base_camera.select()
 				Undo.finishEdit('Add camera', {outliner: true, elements: selected, selection: true});
 				Blockbench.dispatchEvent( 'add_camera', {object: base_camera} )
@@ -250,6 +311,33 @@ BBPlugin.register('cameras', {
 		})
 		Preview.prototype.menu.addAction(link_action, -3);
 
+		
+		let set_fov_action = new Action('edit_camera_properties', {
+			name: 'Camera Properties...',
+			icon: 'settings_photo_camera',
+			category: 'edit',
+			condition: () => CameraElement.selected.length,
+			click() {
+				new Dialog('edit_camera_properties', {
+					title: 'Edit Camera Properties',
+					form: {
+						fov: {label: 'FOV', value: CameraElement.selected[0]?.fov, type: 'number', min: 1, max: 160},
+						aspect_ratio: {label: 'Aspect Ratio', value: CameraElement.selected[0]?.aspect_ratio, type: 'vector', dimensions: 2, min: 1},
+					},
+					onConfirm(form) {
+						Undo.initEdit({elements: CameraElement.selected})
+						CameraElement.selected.forEach(camera => {
+							camera.fov = form.fov;
+							camera.aspect_ratio.replace(form.aspect_ratio);
+							CameraElement.preview_controller.updateTransform(camera);
+						})
+						Undo.finishEdit('Change camera FOV')
+					}
+				}).show();
+			}
+		})
+		deletables.push(set_fov_action);
+
 		let snap_action = new Action('camera_to_view', {
 			name: 'Move Camera to View',
 			icon: 'fas.fa-video',
@@ -271,6 +359,7 @@ BBPlugin.register('cameras', {
 		})
 		deletables.push(snap_action);
 
+		const anim_sign = Blockbench.isNewerThan('4.99') ? 1 : -1;
 		class CameraAnimator extends BoneAnimator {
 			constructor(uuid, animation, name) {
 				super(uuid, animation);
@@ -279,6 +368,7 @@ BBPlugin.register('cameras', {
 		
 				this.position = [];
 				this.rotation = [];
+				this.fov = [];
 			}
 			get name() {
 				var element = this.getElement();
@@ -328,7 +418,7 @@ BBPlugin.register('cameras', {
 			displayPosition(arr, multiplier = 1) {
 				var bone = this.element.mesh
 				if (arr) {
-					bone.position.x -= arr[0] * multiplier;
+					bone.position.x += arr[0] * multiplier * anim_sign;
 					bone.position.y += arr[1] * multiplier;
 					bone.position.z += arr[2] * multiplier;
 				}
@@ -337,15 +427,29 @@ BBPlugin.register('cameras', {
 			displayRotation(arr, multiplier = 1) {
 				var bone = this.element.mesh
 				if (arr) {
-					arr.forEach((n, i) => {
-						bone.rotation[getAxisLetter(i)] += Math.degToRad(n) * (i == 2 ? 1 : -1) * multiplier
-					})
+					if (anim_sign == 1) {
+						if (arr.length === 4) {
+							var added_rotation = new THREE.Euler().setFromQuaternion(new THREE.Quaternion().fromArray(arr), 'ZYX')
+							bone.rotation.x += added_rotation.x * multiplier
+							bone.rotation.y += added_rotation.y * multiplier
+							bone.rotation.z += added_rotation.z * multiplier
+						} else {
+							bone.rotation.x += Math.degToRad(arr[0]) * multiplier
+							bone.rotation.y += Math.degToRad(arr[1]) * multiplier
+							bone.rotation.z += Math.degToRad(arr[2]) * multiplier
+						}
+					} else {
+						arr.forEach((n, i) => {
+							bone.rotation[getAxisLetter(i)] += Math.degToRad(n) * (i == 2 ? 1 : -1) * multiplier
+						})
+					}
 				}
 				return this;
 			}
 			displayFrame(multiplier = 1) {
 				if (!this.doRender()) return;
 				this.getElement()
+				let fov;
 		
 				if (!this.muted.position) {
 					this.displayPosition(this.interpolate('position'), multiplier);
@@ -353,16 +457,30 @@ BBPlugin.register('cameras', {
 				if (!this.muted.rotation) {
 					this.displayRotation(this.interpolate('rotation'), multiplier);
 				}
+				if (!this.muted.fov) {
+					fov = this.interpolate('fov')[0];
+				}
 				this.element.mesh.updateMatrixWorld()
-				this.element.updatePreviewCamera();
+				this.element.mesh.fov = fov;
+				this.element.preview_controller.updateGeometry(this.element);
+				this.element.updatePreviewCamera(fov);
 			}
 		}
 			CameraAnimator.prototype.type = 'camera';
 			CameraAnimator.prototype.channels = {
 				position: {name: tl('timeline.position'), mutable: true, transform: true, max_data_points: 2},
 				rotation: {name: tl('timeline.rotation'), mutable: true, transform: true, max_data_points: 2},
+				fov: {name: 'FOV', mutable: true, transform: true, max_data_points: 2},
 			}
 		CameraElement.animator = CameraAnimator;
+
+		Blockbench.on('select_mode', (arg) => {
+			if (arg.mode.id == 'animate') return;
+			for (let camera of CameraElement.all) {
+				camera.mesh.fov = camera.fov;
+				CameraElement.preview_controller.updateGeometry(camera);
+			}
+		})
 
 	},
 	onunload() {
@@ -372,4 +490,3 @@ BBPlugin.register('cameras', {
 	}
 });
 
-})()

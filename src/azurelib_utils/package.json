@@ -1,28 +1,37 @@
 {
   "name": "azurelib_utils",
-  "version": "1.0.2",
+  "version": "2.0.0",
   "private": true,
-  "description": "AzureLib Utils",
+  "description": "AzureLib Animator",
   "main": "index.js",
   "scripts": {
-    "build": "webpack && node scripts/updateManifest.js",
+    "build": "webpack",
     "start": "webpack --watch --mode=development",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
     "pretest": "npm run lint",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "author": "AzureDoom, Eliot Lash, Gecko, McHorse",
+  "author": "AzureDoom",
   "license": "MIT",
   "blockbenchConfig": {
-    "title": "AzureLib Utils",
-    "author": "AzureDoom, Eliot Lash, Gecko, McHorse",
+    "title": "AzureLib Animator",
+    "author": "AzureDoom",
     "icon": "azureicon.png",
-    "description": "Create animated blocks, items, entity, and armor using the AzureLib library and plugin. This is a fork of Geckolib and cross compatibility will not be promised in the future.",
-    "min_version": "4.0.0",
-    "max_version": "5.0.0",
+    "description": "Create models, textures, and animations for AzureLib-powered mods using Bedrock-style tools.",
+    "min_version": "4.8.0",
+    "max_version": "15.0.0",
+    "new_repository_format": "true",
     "variant": "both",
-    "creation_date": "2023-04-04"
+    "creation_date": "2023-04-04",
+    "contributes": {
+        "formats": ["azure_model"]
+    },
+    "has_changelog": true,
+    "website": "https://wiki.azuredoom.com/",
+    "tags": [
+      "Minecraft: Java Edition"
+    ]
   },
   "sideEffects": [
     "./index.js"
@@ -30,7 +39,7 @@
   "devDependencies": {
     "eol": "0.9.1",
     "eslint": "8.46.0",
-    "webpack": "5.88.2",
+    "webpack": "5.102.1",
     "webpack-cli": "5.1.4"
   },
   "dependencies": {

@@ -1306,7 +1306,9 @@ Plugin.register('ambient_occlusion', {
 	icon: 'gradient',
 	author: 'JannisX11',
 	description: 'Adds a screen space ambient occlusion shader',
-	version: '1.0.3',
+	tags: ["Deprecated"],
+	deprecation_note: "This plugin can cause visual artifacts and a decreased framerate",
+	version: '1.0.4',
 	min_version: '3.2.0',
 	variant: 'both',
 	onload() {
@@ -1363,7 +1365,7 @@ Plugin.register('ambient_occlusion', {
 			this.controls.update()
 			//console.log(Settings.get('ambient_occlusion_enabled') ? 'composer' : 'renderer', this[Settings.get('ambient_occlusion_enabled') ? 'composer' : 'renderer'])
 			this[(Settings.get('ambient_occlusion_enabled') && this !== MediaPreview) ? 'composer' : 'renderer'].render(
-				(display_mode && Blockbench.isOlderThan('4.3'))
+				(Modes.display && Blockbench.isOlderThan('4.3'))
 					? display_scene
 					: scene,
 				this.camera
