@@ -2,8 +2,6 @@
 import './utils'
 
 import './elements/aabb'
-import './elements/amt_text'
-// import registerWire from './elements/amt_wire'
 
 import './codec/aabb_exporter'
 import './codec/obj_exporter'
@@ -12,7 +10,7 @@ import {registerAABB} from "./elements/aabb";
 import {exportAnimationAMT} from "./codec/amt_animation_exporter";
 import {exportAABB} from "./codec/aabb_exporter";
 import {ungroup} from "./misc_actions";
-import {exportAMTModel} from "./codec/obj_exporter";
+import {exportAMTModel, exportOBJStaticAction, exportOBJDynamicAction, objCodec, objIECodec} from "./codec/obj_exporter";
 
 
 var iiBarMenu = null;
@@ -24,19 +22,38 @@ const plugin = Plugin.register('iitoolkit', {
 	description: 'Utility plugin for Immersive Intelligence mod models. https://github.com/Pabilo8/ImmersiveIntelligence',
 	about: 'Go to Animation -> Export AMT...',
 	tags: ["Minecraft: Java Edition"],
-	version: '0.3.0',
+	version: '0.4.0',
 	min_version: '4.0.0',
 	variant: 'both',
 	onload() {
 		registerAABB();
 
-		iiBarMenu = new BarMenu("iitoolkit", [ungroup, exportAnimationAMT, exportAMTModel, exportAABB]);
+		iiBarMenu = new BarMenu("iitoolkit", [ungroup, exportAnimationAMT, exportAMTModel, exportAABB],{
+			name: 'Immersive Intelligence Toolkit'
+		});
 		MenuBar.addAction(exportAMTModel, 'file.export.0');
+		//MenuBar.addAction(exportOBJStaticAction, 'file.export.0');
+		//MenuBar.addAction(exportOBJDynamicAction, 'file.export.0');
+
+		MenuBar.menus.file.addAction(exportOBJStaticAction, "export.1");
+		MenuBar.menus.file.addAction(exportOBJDynamicAction, "export.1");
+
+		let hook = Blockbench.on("quick_save_model", () => {
+			for (let collection of Collection.all) {
+				if (collection.export_codec === objCodec.id)
+					objCodec.writeCollection(collection);
+				else if (collection.export_codec === objIECodec.id)
+					objIECodec.writeCollection(collection);
+
+			}
+		});
 	},
 	onunload() {
 		exportAnimationAMT.delete();
 		exportAMTModel.delete();
 		exportAABB.delete();
 		ungroup.delete();
+		exportOBJStaticAction.delete();
+		exportOBJDynamicAction.delete();
 	}
 });

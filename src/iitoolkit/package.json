@@ -7,10 +7,35 @@
   "main": "index.js",
   "scripts": {
     "build": "webpack",
-    "watch": "webpack --watch"
+    "start": "webpack --watch --mode=development",
+    "lint": "eslint .",
+    "lint:fix": "eslint --fix .",
+    "pretest": "npm run lint"
+  },
+  "blockbenchConfig": {
+    "title": "Immersive Intelligence Toolkit",
+    "author": "Pabilo8",
+    "icon": "azureicon.png",
+    "description": "Utility plugin for working with Immersive Intelligence's AMT model standard.",
+    "new_repository_format": "true",
+    "variant": "both",
+    "contributes": {
+      "formats": ["AMT Model"],
+      "open_extensions": ["obj.amt", ".amt", "obj", "obj.ie"]
+    },
+    "has_changelog": false,
+    "tags": [
+      "AMT",
+      "Immersive Intelligence",
+      "Minecraft Forge",
+      "1.12.2",
+      "Minecraft: Java Edition"
+    ]
   },
   "devDependencies": {
-    "webpack": "4.43.0",
-    "webpack-cli": "3.3.12"
+    "eol": "0.9.1",
+    "eslint": "8.46.0",
+    "webpack": "5.102.1",
+    "webpack-cli": "5.1.4"
   }
 }

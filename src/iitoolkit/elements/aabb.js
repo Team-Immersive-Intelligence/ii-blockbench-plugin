@@ -79,6 +79,7 @@ export function registerAABB() {
     new Property(AABB, 'vector', 'origin');
     new Property(AABB, 'vector', 'scale', {default: [16, 16, 16]});
     new Property(AABB, 'boolean', 'visibility', {default: true});
+
     OutlinerElement.registerType(AABB, 'aabb');
 
     new NodePreviewController(AABB, {

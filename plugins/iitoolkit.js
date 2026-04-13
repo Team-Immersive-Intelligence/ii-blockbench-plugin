@@ -1,142 +1,22 @@
-/******/ (function(modules) { // webpackBootstrap
-/******/ 	// The module cache
-/******/ 	var installedModules = {};
-/******/
-/******/ 	// The require function
-/******/ 	function __webpack_require__(moduleId) {
-/******/
-/******/ 		// Check if module is in cache
-/******/ 		if(installedModules[moduleId]) {
-/******/ 			return installedModules[moduleId].exports;
-/******/ 		}
-/******/ 		// Create a new module (and put it into the cache)
-/******/ 		var module = installedModules[moduleId] = {
-/******/ 			i: moduleId,
-/******/ 			l: false,
-/******/ 			exports: {}
-/******/ 		};
-/******/
-/******/ 		// Execute the module function
-/******/ 		modules[moduleId].call(module.exports, module, module.exports, __webpack_require__);
-/******/
-/******/ 		// Flag the module as loaded
-/******/ 		module.l = true;
-/******/
-/******/ 		// Return the exports of the module
-/******/ 		return module.exports;
-/******/ 	}
-/******/
-/******/
-/******/ 	// expose the modules object (__webpack_modules__)
-/******/ 	__webpack_require__.m = modules;
-/******/
-/******/ 	// expose the module cache
-/******/ 	__webpack_require__.c = installedModules;
-/******/
-/******/ 	// define getter function for harmony exports
-/******/ 	__webpack_require__.d = function(exports, name, getter) {
-/******/ 		if(!__webpack_require__.o(exports, name)) {
-/******/ 			Object.defineProperty(exports, name, { enumerable: true, get: getter });
-/******/ 		}
-/******/ 	};
-/******/
-/******/ 	// define __esModule on exports
-/******/ 	__webpack_require__.r = function(exports) {
-/******/ 		if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
-/******/ 			Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
-/******/ 		}
-/******/ 		Object.defineProperty(exports, '__esModule', { value: true });
-/******/ 	};
-/******/
-/******/ 	// create a fake namespace object
-/******/ 	// mode & 1: value is a module id, require it
-/******/ 	// mode & 2: merge all properties of value into the ns
-/******/ 	// mode & 4: return value when already ns object
-/******/ 	// mode & 8|1: behave like require
-/******/ 	__webpack_require__.t = function(value, mode) {
-/******/ 		if(mode & 1) value = __webpack_require__(value);
-/******/ 		if(mode & 8) return value;
-/******/ 		if((mode & 4) && typeof value === 'object' && value && value.__esModule) return value;
-/******/ 		var ns = Object.create(null);
-/******/ 		__webpack_require__.r(ns);
-/******/ 		Object.defineProperty(ns, 'default', { enumerable: true, value: value });
-/******/ 		if(mode & 2 && typeof value != 'string') for(var key in value) __webpack_require__.d(ns, key, function(key) { return value[key]; }.bind(null, key));
-/******/ 		return ns;
-/******/ 	};
-/******/
-/******/ 	// getDefaultExport function for compatibility with non-harmony modules
-/******/ 	__webpack_require__.n = function(module) {
-/******/ 		var getter = module && module.__esModule ?
-/******/ 			function getDefault() { return module['default']; } :
-/******/ 			function getModuleExports() { return module; };
-/******/ 		__webpack_require__.d(getter, 'a', getter);
-/******/ 		return getter;
-/******/ 	};
-/******/
-/******/ 	// Object.prototype.hasOwnProperty.call
-/******/ 	__webpack_require__.o = function(object, property) { return Object.prototype.hasOwnProperty.call(object, property); };
-/******/
-/******/ 	// __webpack_public_path__
-/******/ 	__webpack_require__.p = "";
-/******/
-/******/
-/******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = "./main.js");
-/******/ })
-/************************************************************************/
-/******/ ({
+/*
+ * ATTENTION: The "eval" devtool has been used (maybe by default in mode: "development").
+ * This devtool is neither made for production nor for readable output files.
+ * It uses "eval()" calls to create a separate source file in the browser devtools.
+ * If you are trying to read the output file, select a different devtool (https://webpack.js.org/configuration/devtool/)
+ * or disable the default devtool with "devtool: false".
+ * If you are looking for production-ready output files, see mode: "production" (https://webpack.js.org/configuration/mode/).
+ */
+/******/ (() => { // webpackBootstrap
+/******/ 	"use strict";
+/******/ 	var __webpack_modules__ = ({
 
 /***/ "./codec/aabb_exporter.js":
 /*!********************************!*\
   !*** ./codec/aabb_exporter.js ***!
   \********************************/
-/*! exports provided: exportAABB */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "exportAABB", function() { return exportAABB; });
-var exportAABB = new Action('export_aabb', {
-    name: 'Export AABB',
-    description: 'Export Axis-Aligned Bounding Boxes for collision detection',
-    icon: 'icon-objects',
-    click: function () {
-        const form = {};
-
-        form["export_mode"] = {
-            label: "Generation Mode", type: "select", options: {
-                mode_groups: "Export groups as separate models",
-                mode_mixed: "Export group \'main\' and other groups (merged as a single model) separately"
-            }
-        }
-
-        const dialog = new Dialog({
-            id: 'animation_export',
-            title: 'Export Stakan',
-            form,
-            onFormChange(form_result) {
-                let bList = form_result["blacklist"];
-                let nFormat = form_result["new_format"];
-                exportOptions.blacklisted_groups = form_result["blacklisted_groups"];
-
-                if (bList != exportOptions.blacklist) {
-                    exportOptions.blacklist = bList;
-                    dialog.setFormValues(form_result);
-                }
-                if (nFormat != exportOptions.new_format) {
-                    exportOptions.new_format = nFormat;
-                    if (nFormat)
-                        form_result["obj_amt"] = form_result["obj_mtl"] = false;
-                }
-
-            },
-            onConfirm(form_result) {
-
-            }
-        });
-        dialog.show();
-    }
-});
+eval("{__webpack_require__.r(__webpack_exports__);\n/* harmony export */ __webpack_require__.d(__webpack_exports__, {\n/* harmony export */   exportAABB: () => (/* binding */ exportAABB)\n/* harmony export */ });\nvar exportAABB = new Action('export_aabb', {\r\n    name: 'Export AABB',\r\n    description: 'Export Axis-Aligned Bounding Boxes for collision detection',\r\n    icon: 'icon-objects',\r\n    click: function () {\r\n        const form = {};\r\n\r\n        form[\"export_mode\"] = {\r\n            label: \"Generation Mode\", type: \"select\", options: {\r\n                mode_groups: \"Export groups as separate models\",\r\n                mode_mixed: \"Export group \\'main\\' and other groups (merged as a single model) separately\"\r\n            }\r\n        }\r\n\r\n        const dialog = new Dialog({\r\n            id: 'animation_export',\r\n            title: 'Export Stakan',\r\n            form,\r\n            onFormChange(form_result) {\r\n                let bList = form_result[\"blacklist\"];\r\n                let nFormat = form_result[\"new_format\"];\r\n                exportOptions.blacklisted_groups = form_result[\"blacklisted_groups\"];\r\n\r\n                if (bList != exportOptions.blacklist) {\r\n                    exportOptions.blacklist = bList;\r\n                    dialog.setFormValues(form_result);\r\n                }\r\n                if (nFormat != exportOptions.new_format) {\r\n                    exportOptions.new_format = nFormat;\r\n                    if (nFormat)\r\n                        form_result[\"obj_amt\"] = form_result[\"obj_mtl\"] = false;\r\n                }\r\n\r\n            },\r\n            onConfirm(form_result) {\r\n\r\n            }\r\n        });\r\n        dialog.show();\r\n    }\r\n});\n\n//# sourceURL=webpack://iitoolkit/./codec/aabb_exporter.js?\n}");
 
 /***/ }),
 
@@ -144,175 +24,9 @@ var exportAABB = new Action('export_aabb', {
 /*!*****************************************!*\
   !*** ./codec/amt_animation_exporter.js ***!
   \*****************************************/
-/*! exports provided: lastAnimationState, lastAMTState, exportAnimationAMT */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "lastAnimationState", function() { return lastAnimationState; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "lastAMTState", function() { return lastAMTState; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "exportAnimationAMT", function() { return exportAnimationAMT; });
-var lastAnimationState = true, lastAMTState = true;
-
-var exportAnimationAMT = new Action('export_animation_amt', {
-    name: 'Export AMT Animation...',
-    description: 'Export a selection of animations as AMT',
-    icon: 'movie',
-    click: function () {
-        const animations = Animation.all.slice()
-        let keys = [];
-        let form = {};
-        let lines = [];
-        if (Format.animation_files) {
-            animations.sort((a1, a2) => a1.path.hashCode() - a2.path.hashCode())
-        }
-
-        //html
-        lines.push("<style>pre {\n" +
-            "                display: inline;\n" +
-            "                margin: 0;\n" +
-            "            }</style>");
-        lines.push("Select animations to be exported as <pre>.json</pre>  AMT Animation files.<br>");
-        lines.push("Select Export AMT to export a <pre>.obj.amt</pre>  metadata file.");
-        lines.push("<hr>");
-
-        //form
-        form["0_animations"] = {label: "Export Animations", type: 'checkbox', value: lastAnimationState};
-
-        animations.forEach(animation => {
-            const key = animation.name;
-            keys.push(key);
-            form["1_" + key.hashCode()] = {
-                label: " " + key + "",
-                type: 'checkbox',
-                value: lastAnimationState
-            };
-        })
-
-        form["2_amt"] = {label: "Export AMT Metadata", type: 'checkbox', value: lastAMTState};
-
-        const dialog = new Dialog({
-            id: 'animation_export',
-            title: 'dialog.animation_export.title',
-            form: form, lines: lines,
-            onFormChange(form_result) {
-                let allowAnimations = form_result["0_animations"];
-
-                //animation toggle
-                if (allowAnimations != lastAnimationState) {
-                    let newValues = {};
-                    animations.forEach(animation => {
-                        newValues["1_" + animation.name.hashCode()] = allowAnimations;
-                    });
-                    //to prevent infinite looping
-
-                    newValues["0_animations"] = lastAnimationState = allowAnimations;
-                    newValues["2_amt"] = form_result["2_amt"];
-
-                    dialog.setFormValues(newValues);
-                }
-
-            },
-            onConfirm(form_result) {
-
-                dialog.hide();
-                console.log(form_result);
-
-                keys = keys.filter(key => form_result["1_" + key.hashCode()])
-
-                Animator.animations.forEach(function (animation) {
-                    if (keys.includes(animation.name)) {
-                        Blockbench.export({
-                            resource_id: 'animation',
-                            type: 'JSON Animation',
-                            extensions: ['json'],
-                            name: animation.name,
-                            content: autoStringify(compileAnimation(animation)),
-                        });
-
-                    }
-                })
-
-                lastAMTState = form_result["2_amt"];
-
-                if (form_result["2_amt"])
-                    Blockbench.export({
-                        resource_id: 'amt',
-                        type: 'AMT Data',
-                        extensions: ['amt'],
-                        name: Project.name + ".obj" + ".amt",
-                        content: autoStringify(compileAMT()),
-                    });
-
-            }
-        })
-        dialog.show();
-    }
-});
-
-function compileAnimation(animation) {
-    const amt_file = {};
-    const maxlength = animation.getMaxLength();
-
-    const animators = animation.animators;
-    const groups = {};
-
-    for (const uuid in animators) {
-        const animator = animators[uuid];
-        if (animator instanceof BoneAnimator) {
-            const keyframes = animator.keyframes;
-            if (keyframes.length) {
-                const group = animator.getGroup();
-                const part = groups[group ? group.name : animator.name] = {};
-
-                /*const origin = group.origin;
-                part["origin"] = origin;*/
-
-                const channels = {};
-                keyframes.forEach(function (kf) {
-                    const channel = kf.channel;
-                    if (!channels[channel]) {
-                        channels[channel] = {};
-                    }
-                    if (kf.transform) {
-                        let keyframe;
-                        const timecodeString = kf.getTimecodeString();
-
-                        let arr = kf.getArray();
-                        //rotation Y should be flipped
-                        //bad solution for a self-made problem
-                        if (channel == 'rotation')
-                            arr = [arr[0], -arr[1], arr[2]];
-
-                        keyframe = {
-                            time: parseFloat(timecodeString) / maxlength,
-                            transform: arr
-                        }
-
-                        channels[channel][timecodeString] = keyframe;
-                    }
-                })
-                for (const channel in Animator.possible_channels) {
-                    const timecodes = channels[channel];
-                    if (timecodes) {
-                        Object.keys(timecodes).sort((a, b) => parseFloat(a) - parseFloat(b)).forEach((timecode) => {
-                            if (!part[channel]) {
-                                part[channel] = [];
-                            }
-                            part[channel].push(timecodes[timecode]);
-                        })
-                    }
-                }
-            }
-        }
-    }
-
-    amt_file.comment = Settings.get("credit");
-    if (Object.keys(groups).length > 0) {
-        amt_file.groups = groups;
-    }
-    return amt_file;
-}
+eval("{__webpack_require__.r(__webpack_exports__);\n/* harmony export */ __webpack_require__.d(__webpack_exports__, {\n/* harmony export */   exportAnimationAMT: () => (/* binding */ exportAnimationAMT),\n/* harmony export */   lastAnimationState: () => (/* binding */ lastAnimationState)\n/* harmony export */ });\nvar lastAnimationState = true;\r\n\r\nvar exportAnimationAMT = new Action('export_animation_amt', {\r\n    name: 'Export AMT Animation...',\r\n    description: 'Export a selection of animations as AMT',\r\n    icon: 'movie',\r\n    click: function () {\r\n        const animations = Animation.all.slice()\r\n        let keys = [];\r\n        let form = {};\r\n        let lines = [];\r\n        if (Format.animation_files) {\r\n            animations.sort((a1, a2) => a1.path.hashCode() - a2.path.hashCode())\r\n        }\r\n\r\n        //html\r\n        lines.push(\"<style>pre {\\n\" +\r\n            \"                display: inline;\\n\" +\r\n            \"                margin: 0;\\n\" +\r\n            \"            }</style>\");\r\n        lines.push(\"Select animations to be exported as <pre>.json</pre>  AMT Animation files.<br>\");\r\n        lines.push(\"Select Export AMT to export a <pre>.obj.amt</pre>  metadata file.\");\r\n        lines.push(\"<hr>\");\r\n\r\n        //form\r\n        form[\"0_animations\"] = {label: \"Export Animations\", type: 'checkbox', value: lastAnimationState};\r\n\r\n        animations.forEach(animation => {\r\n            const key = animation.name;\r\n            keys.push(key);\r\n            form[\"1_\" + key.hashCode()] = {\r\n                label: \" \" + key + \"\",\r\n                type: 'checkbox',\r\n                value: lastAnimationState\r\n            };\r\n        })\r\n\r\n        const dialog = new Dialog({\r\n            id: 'animation_export',\r\n            title: 'dialog.animation_export.title',\r\n            form: form, lines: lines,\r\n            onFormChange(form_result) {\r\n                let allowAnimations = form_result[\"0_animations\"];\r\n\r\n                //animation toggle\r\n                if (allowAnimations != lastAnimationState) {\r\n                    let newValues = {};\r\n                    animations.forEach(animation => {\r\n                        newValues[\"1_\" + animation.name.hashCode()] = allowAnimations;\r\n                    });\r\n                    //to prevent infinite looping\r\n\r\n                    newValues[\"0_animations\"] = lastAnimationState = allowAnimations;\r\n                    dialog.setFormValues(newValues);\r\n                }\r\n\r\n            },\r\n            onConfirm(form_result) {\r\n\r\n                dialog.hide();\r\n                console.log(form_result);\r\n\r\n                keys = keys.filter(key => form_result[\"1_\" + key.hashCode()])\r\n\r\n                Animator.animations.forEach(function (animation) {\r\n                    if (keys.includes(animation.name)) {\r\n                        Blockbench.export({\r\n                            resource_id: 'animation',\r\n                            type: 'AMT JSON Animation',\r\n                            extensions: ['json'],\r\n                            name: animation.name,\r\n                            content: autoStringify(compileAnimation(animation)),\r\n                        });\r\n\r\n                    }\r\n                })\r\n            }\r\n        })\r\n        dialog.show();\r\n    }\r\n});\r\n\r\nfunction compileAnimation(animation) {\r\n    const amt_file = {};\r\n    const maxlength = animation.getMaxLength();\r\n\r\n    const animators = animation.animators;\r\n    const groups = {};\r\n\r\n    for (const uuid in animators) {\r\n        const animator = animators[uuid];\r\n        if (animator instanceof BoneAnimator) {\r\n            const keyframes = animator.keyframes;\r\n            if (keyframes.length) {\r\n                const group = animator.getGroup();\r\n                const part = groups[group ? group.name : animator.name] = {};\r\n\r\n                /*const origin = group.origin;\r\n                part[\"origin\"] = origin;*/\r\n\r\n                const channels = {};\r\n                keyframes.forEach(function (kf) {\r\n                    const channel = kf.channel;\r\n                    if (!channels[channel]) {\r\n                        channels[channel] = {};\r\n                    }\r\n                    if (kf.transform) {\r\n                        let keyframe;\r\n                        const timecodeString = kf.getTimecodeString();\r\n\r\n                        let arr = kf.getArray();\r\n                        //rotation X should be flipped\r\n                        if (channel === 'rotation')\r\n                            arr = [-arr[0], arr[1], arr[2]];\r\n\r\n                        keyframe = {\r\n                            time: parseFloat(timecodeString) / maxlength,\r\n                            transform: arr\r\n                        }\r\n\r\n                        channels[channel][timecodeString] = keyframe;\r\n                    }\r\n                })\r\n                for (const channel in Animator.possible_channels) {\r\n                    const timecodes = channels[channel];\r\n                    if (timecodes) {\r\n                        Object.keys(timecodes).sort((a, b) => parseFloat(a) - parseFloat(b)).forEach((timecode) => {\r\n                            if (!part[channel]) {\r\n                                part[channel] = [];\r\n                            }\r\n                            part[channel].push(timecodes[timecode]);\r\n                        })\r\n                    }\r\n                }\r\n            }\r\n        }\r\n    }\r\n\r\n    amt_file.comment = Settings.get(\"credit\");\r\n    if (Object.keys(groups).length > 0) {\r\n        amt_file.groups = groups;\r\n    }\r\n    return amt_file;\r\n}\n\n//# sourceURL=webpack://iitoolkit/./codec/amt_animation_exporter.js?\n}");
 
 /***/ }),
 
@@ -320,274 +34,9 @@ function compileAnimation(animation) {
 /*!*******************************!*\
   !*** ./codec/obj_exporter.js ***!
   \*******************************/
-/*! exports provided: exportOptions, exportAMTModel, objCodec, mtlCodec */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "exportOptions", function() { return exportOptions; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "exportAMTModel", function() { return exportAMTModel; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "objCodec", function() { return objCodec; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "mtlCodec", function() { return mtlCodec; });
-/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./../utils */ "./utils.js");
-/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_utils__WEBPACK_IMPORTED_MODULE_0__);
-//-- Export Dialogue --//
-
-
-var exportOptions = {
-    export_mode: "mode_groups",
-    blacklist: false,
-    blacklisted_groups: "",
-    new_format: "",
-    scale: 0.0625,
-    offset: [-0.5, 0, -0.5]
-};
-
-var exportAMTModel = new Action('export_amt_model', {
-    name: 'Export AMT Model',
-    description: 'Export an AMT Model',
-    icon: 'icon-objects',
-    click: function () {
-        const form = {};
-
-        form["export_mode"] = {
-            label: "Generation Mode", type: "select", options: {
-                mode_groups: "Export groups as separate models",
-                mode_mixed: "Export group \'main\' and other groups (merged as a single model) separately",
-                mode_single: "Export all as single model",
-                mode_parts: "Export single model with parts as separate objects (instead of groups)"
-            }, value: exportOptions.export_mode
-        }
-
-        form["offset"] = {label: "Model offset", type: 'vector', value: exportOptions.offset};
-        form["scale"] = {label: "Scale", type: 'number', value: exportOptions.scale};
-
-        form["blacklist"] = {label: "Blacklist groups", type: 'checkbox', value: exportOptions.blacklist};
-        form["blacklisted_groups"] = {
-            label: "Blacklisted",
-            type: 'textarea',
-            text: exportOptions.blacklisted_groups,
-            description: 'Separate group names with comma',
-            condition: () => exportOptions.blacklist
-        };
-
-        form["new_format"] = {
-            label: "Use experimental joint .amt format",
-            type: 'checkbox',
-            value: exportOptions.new_format
-        };
-        form["obj_amt"] = {
-            label: "Export .obj.amt properties",
-            type: 'checkbox',
-            value: !exportOptions.new_format,
-            readonly: exportOptions.new_format
-        };
-        form["obj_mtl"] = {
-            label: "Export .mtl properties",
-            type: 'checkbox',
-            value: !exportOptions.new_format,
-            readonly: exportOptions.new_format
-        };
-
-        const dialog = new Dialog({
-            id: 'animation_export',
-            title: 'Export AMT Model',
-            form,
-            onFormChange(form_result) {
-                let bList = form_result["blacklist"];
-                let nFormat = form_result["new_format"];
-                exportOptions.blacklisted_groups = form_result["blacklisted_groups"];
-
-                if (bList != exportOptions.blacklist) {
-                    exportOptions.blacklist = bList;
-                    dialog.setFormValues(form_result);
-                }
-                if (nFormat != exportOptions.new_format) {
-                    exportOptions.new_format = nFormat;
-                    if (nFormat)
-                        form_result["obj_amt"] = form_result["obj_mtl"] = false;
-                }
-
-            },
-            onConfirm(form_result) {
-                exportOptions = form_result;
-                dialog.hide();
-
-                //Export 3D Geometry
-                switch (form_result["export_mode"]) {
-                    case "mode_groups":
-
-                        break;
-                    case "mode_mixed":
-
-                        break;
-                    case "mode_single":
-                        objCodec.export();
-                        break;
-                    case "mode_parts":
-
-                        break;
-                }
-
-                //Export Materials
-                if (form_result["obj_mtl"])
-                    mtlCodec.export();
-
-                //Export Hierarchy for Animations
-                if (form_result["obj_amt"])
-                    Blockbench.export({
-                        resource_id: 'amt',
-                        type: 'AMT Data',
-                        extensions: ['amt'],
-                        name: Project.name + ".obj" + ".amt",
-                        content: autoStringify(compileAMT()),
-                    });
-            }
-        });
-        dialog.show();
-    }
-});
-
-//-- Dirty Work --//
-
-function compileAMT() {
-    const amt_file = {};
-
-    const pos = {};
-    const hierarchy = {};
-
-    Project.groups.forEach(
-        function (p) {
-            pos[p.name] = p.origin;
-            if (typeof p.parent == "object")
-                hierarchy[p.name] = p.parent.name;
-        }
-    )
-
-    Project.elements.forEach(
-        function (p) {
-            if (p instanceof Locator) {
-                pos[p.name] = p.origin;
-                if (typeof p.parent == "object")
-                    hierarchy[p.name] = p.parent.name;
-            }
-        }
-    )
-
-    amt_file.origins = pos;
-    amt_file.hierarchy = hierarchy;
-    return amt_file;
-}
-
-var objCodec = new Codec("ii_obj", {
-    name: "II OBJ",
-    extension: "obj.ie",
-    remember: false,
-    compile(options) {
-        return compileModel();
-    }
-});
-
-var mtlCodec = new Codec("mtl", {
-    name: "II MTL",
-    extension: "mtl",
-    remember: false,
-    compile(options) {
-        return compileMaterial();
-    }
-});
-
-function compileModel() {
-    let compiled = [], textures = [], texture_names = [];
-
-    compiled.push("# " + Settings.get("credit"));
-    compiled.push(`mtllib ${Project.name}.mtl\n`);
-
-    Texture.all.forEach(t => {
-        textures[t.uuid] = t;
-        texture_names[t.uuid] = t.name.replaceAll(".png", "")
-    });
-
-    let vertice_id = 1, face_id = 1;
-    for (let element of Outliner.elements) {
-        //o -> v -> vt -> vn -> usemtl / f
-
-        compiled.push("o " + element.name);
-        if (element instanceof Cube) {
-
-        } else if (element instanceof Mesh) {
-            let verticesMap = Object.keys(element.vertices);
-            let verticesList = element.vertice_list;
-            let facesList = [];
-            element.forAllFaces(f => facesList.push(f));
-
-            for (let vert of verticesList) {
-                //Apply scale and offset to the vertex
-                let correctedVert = [
-                    parseFloat(vert[0] * exportOptions.scale + exportOptions.offset[0]),
-                    parseFloat(vert[1] * exportOptions.scale + exportOptions.offset[1]),
-                    parseFloat(vert[2] * exportOptions.scale + exportOptions.offset[2])
-                ]
-                //v vx vy vz
-                compiled.push(`v ${correctedVert[0]} ${correctedVert[1]} ${correctedVert[2]}`)
-            }
-
-            //vt
-            for (let face of facesList) {
-                let width = parseFloat(textures[face.texture].width),
-                    height = parseFloat(textures[face.texture].height);
-
-                for (let vert of face.getSortedVertices()) {
-                    let uv = face.uv[vert].map(n => parseFloat(n));
-                    compiled.push(`vt ${uv[0] / width} ${uv[1] / height}`);
-                }
-            }
-
-            //vn
-            for (let face of facesList) {
-                //Apply scale and offset to the vertex
-                let norm = normalizeVector(face.getNormal());
-                compiled.push(`vn ${norm[0]} ${norm[1]} ${norm[2]}`)
-            }
-
-            let lastMaterial = null;
-            for (let face of facesList) {
-                if (lastMaterial != face.texture) {
-                    lastMaterial = face.texture;
-                    compiled.push("usemtl " + texture_names[face.texture]);
-                }
-                let faceVertices = (face.getSortedVertices()).map(f => verticesMap.indexOf(f) + vertice_id),
-                    verticeString = "";
-
-                verticeString += `${faceVertices[3]}/${faceVertices[0]}/${face_id} `;
-                verticeString += `${faceVertices[0]}/${faceVertices[1]}/${face_id} `;
-                verticeString += `${faceVertices[1]}/${faceVertices[2]}/${face_id} `;
-                verticeString += `${faceVertices[2]}/${faceVertices[3]}/${face_id}`;
-
-                compiled.push("f " + verticeString);
-                face_id++;
-            }
-
-            vertice_id += verticesList.length;
-        }
-    }
-
-    return compiled.join("\n");
-}
-
-function compileMaterial() {
-    let compiled = [];
-    compiled.push("# " + Settings.get("credit"));
-    compiled.push("");
-
-    for (let texture of Texture.all) {
-        let name = (String)(texture.name).replace(".png", "").toLowerCase();
-        compiled.push("newmtl " + name);
-        compiled.push("map_Kd " + getResourceLocation(texture.path.toLowerCase()));
-    }
-
-    return compiled.join("\n");
-}
+eval("{__webpack_require__.r(__webpack_exports__);\n/* harmony export */ __webpack_require__.d(__webpack_exports__, {\n/* harmony export */   exportAMTModel: () => (/* binding */ exportAMTModel),\n/* harmony export */   exportOBJDynamicAction: () => (/* binding */ exportOBJDynamicAction),\n/* harmony export */   exportOBJStaticAction: () => (/* binding */ exportOBJStaticAction),\n/* harmony export */   exportOptions: () => (/* binding */ exportOptions),\n/* harmony export */   mtlCodec: () => (/* binding */ mtlCodec),\n/* harmony export */   objCodec: () => (/* binding */ objCodec),\n/* harmony export */   objIECodec: () => (/* binding */ objIECodec)\n/* harmony export */ });\n/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../utils */ \"./utils.js\");\n//-- Export Dialogue --//\r\n\r\n\r\nvar exportOptions = {\r\n    export_mode: \"obj\",\r\n    obj_amt: true,\r\n    obj_mtl: true,\r\n    scale: 0.0625,\r\n    offset: [-0.5, 0, -0.5]\r\n};\r\n\r\nvar exportAMTModel = new Action('export_amt_model', {\r\n    name: 'Export AMT Model',\r\n    description: 'Export an AMT Model',\r\n    icon: 'icon-objects',\r\n    click: function () {\r\n        const form = {};\r\n\r\n        form[\"offset\"] = {label: \"Model offset\", type: 'vector', value: exportOptions.offset};\r\n        form[\"scale\"] = {label: \"Scale\", type: 'number', value: exportOptions.scale};\r\n\r\n        form[\"export_mode\"] = {\r\n            label: \"Export Format\", type: \"select\", options: {\r\n                none: \"None\",\r\n                obj: \"Static OBJ Model\",\r\n                obj_ie: \"Dynamic OBJ Model\"\r\n            }, value: exportOptions.export_mode\r\n        }\r\n        form[\"obj_amt\"] = {\r\n            label: \"Export .obj.amt properties\",\r\n            type: 'checkbox',\r\n            value: exportOptions.obj_amt,\r\n            readonly: exportOptions.obj_amt\r\n        };\r\n        form[\"obj_mtl\"] = {\r\n            label: \"Export .mtl properties\",\r\n            type: 'checkbox',\r\n            value: exportOptions.obj_mtl,\r\n            readonly: exportOptions.obj_mtl\r\n        };\r\n\r\n        const dialog = new Dialog({\r\n            id: 'animation_export',\r\n            title: 'Export AMT Model',\r\n            form,\r\n            onFormChange(form_result) {\r\n                let bList = form_result[\"blacklist\"];\r\n                let nFormat = form_result[\"new_format\"];\r\n                exportOptions.blacklisted_groups = form_result[\"blacklisted_groups\"];\r\n            },\r\n            onConfirm(form_result) {\r\n                exportOptions = form_result;\r\n                dialog.hide();\r\n\r\n                console.log(\"Exporting II model in mode \" + form_result[\"export_mode\"] + \"...\");\r\n                //Export 3D Geometry\r\n                switch (form_result[\"export_mode\"]) {\r\n                    case \"none\":\r\n                        break\r\n                    case \"obj\":\r\n                        objCodec.export();\r\n                        break;\r\n                    case \"obj_ie\":\r\n                        objIECodec.export();\r\n                        break;\r\n                }\r\n\r\n                //Export Materials\r\n                if (form_result[\"obj_mtl\"])\r\n                    mtlCodec.export();\r\n\r\n                //Export Hierarchy for Animations\r\n                if (form_result[\"obj_amt\"])\r\n                    Blockbench.export({\r\n                        resource_id: 'amt',\r\n                        type: 'AMT Data',\r\n                        extensions: ['amt'],\r\n                        name: Project.name + \".obj\" + \".amt\",\r\n                        content: autoStringify(compileAMT()),\r\n                    });\r\n            }\r\n        });\r\n        dialog.show();\r\n    }\r\n});\r\n\r\nvar exportOBJStaticAction = new Action(\"export_obj_static\", {\r\n    name: \"Export Static OBJ\",\r\n    description: \"Export a static OBJ model using II Toolkit\",\r\n    icon: \"icon-gltf\",\r\n    category: \"file\",\r\n    condition: {\r\n        modes: ['edit'],\r\n        method: () => Format?.meshes,\r\n    },\r\n    click: function () {\r\n        objCodec.export();\r\n    }\r\n});\r\n\r\nvar exportOBJDynamicAction = new Action(\"export_obj_dynamic\", {\r\n    name: \"Export Dynamic OBJ\",\r\n    description: \"Export a dynamic OBJ model using II Toolkit\",\r\n    icon: \"icon-gltf\",\r\n    category: \"file\",\r\n    condition: {\r\n        modes: ['edit'],\r\n        method: () => Format?.meshes,\r\n    },\r\n    click: function () {\r\n        objIECodec.export();\r\n    }\r\n});\r\n\r\n//-- Dirty Work --//\r\n\r\nfunction compileAMT() {\r\n    const amt_file = {};\r\n\r\n    const pos = {};\r\n    const hierarchy = {};\r\n\r\n    Project.groups.forEach(\r\n        function (p) {\r\n            pos[p.name] = p.origin;\r\n            if (typeof p.parent == \"object\")\r\n                hierarchy[p.name] = p.parent.name;\r\n        }\r\n    )\r\n\r\n    Project.elements.forEach(\r\n        function (p) {\r\n            if (p instanceof Locator) {\r\n                pos[p.name] = p.origin;\r\n                if (typeof p.parent == \"object\")\r\n                    hierarchy[p.name] = p.parent.name;\r\n            }\r\n        }\r\n    )\r\n\r\n    amt_file.origins = pos;\r\n    amt_file.hierarchy = hierarchy;\r\n    return amt_file;\r\n}\r\n\r\nvar objCodec = new Codec(\"ii_obj\", {\r\n    name: \"II Static OBJ\",\r\n    support_partial_export: true,\r\n    extension: \"obj\",\r\n    remember: true,\r\n    export_action: exportOBJStaticAction,\r\n\r\n    compile(options) {\r\n        return compileModel(options);\r\n    },\r\n\r\n    async exportCollection(collection) {\r\n        this.context = collection;\r\n        try {\r\n            await this.export({attachment: collection});\r\n            if (\"saved\" in collection) collection.saved = true;\r\n        } finally {\r\n            this.context = null;\r\n        }\r\n    },\r\n\r\n    async writeCollection(collection) {\r\n        this.context = collection;\r\n        try {\r\n            this.write(this.compile({attachment: collection}), collection.export_path);\r\n            if (\"saved\" in collection) collection.saved = true;\r\n        } finally {\r\n            this.context = null;\r\n        }\r\n    }\r\n});\r\n\r\nvar objIECodec = new Codec(\"ii_obj_ie\", {\r\n    name: \"II Dynamic OBJ\",\r\n    support_partial_export: true,\r\n    extension: \"obj.ie\",\r\n    remember: true,\r\n    export_action: exportOBJDynamicAction,\r\n\r\n    compile(options) {\r\n        return compileModel(options);\r\n    },\r\n\r\n    async exportCollection(collection) {\r\n        this.context = collection;\r\n        try {\r\n            await this.export({attachment: collection});\r\n            if (\"saved\" in collection)\r\n                collection.saved = true;\r\n        } finally {\r\n            this.context = null;\r\n        }\r\n    },\r\n\r\n    async writeCollection(collection) {\r\n        this.context = collection;\r\n        try {\r\n            const exportPath = String(collection.export_path ?? \"\").replace(/(\\.obj\\.ie|\\.obj|\\.ie)+$/i, \"\") + \".obj.ie\";\r\n            this.write(this.compile({attachment: collection}), exportPath);\r\n            collection.export_path = exportPath;\r\n            if (\"saved\" in collection)\r\n                collection.saved = true;\r\n        } finally {\r\n            this.context = null;\r\n        }\r\n    }\r\n});\r\n\r\nvar mtlCodec = new Codec(\"mtl\", {\r\n    name: \"II MTL\",\r\n    extension: \"mtl\",\r\n    remember: false,\r\n\r\n    compile(options) {\r\n        return compileMaterial(options);\r\n    }\r\n});\r\n\r\nfunction compileModel(options) {\r\n    let compiled = [], textures = [], texture_names = [];\r\n    let exportElements = getExportElements(options);\r\n\r\n    compiled.push(\"# \" + Settings.get(\"credit\"));\r\n    compiled.push(`mtllib ${Project.name}.mtl\\n`);\r\n\r\n    Texture.all.forEach(t => {\r\n        textures[t.uuid] = t;\r\n        texture_names[t.uuid] = t.name.replaceAll(\".png\", \"\")\r\n    });\r\n\r\n    let vertice_id = 1, face_id = 1;\r\n    for (let element of exportElements) {\r\n        //o -> v -> vt -> vn -> usemtl / f\r\n\r\n        if (element instanceof Cube) {\r\n            compiled.push(\"o \" + element.name);\r\n\r\n        } else if (element instanceof Mesh) {\r\n            compiled.push(\"o \" + element.name);\r\n            let verticesMap = Object.keys(element.vertices);\r\n            let verticesList = element.vertice_list;\r\n            let facesList = [];\r\n            element.forAllFaces(f => facesList.push(f));\r\n\r\n            for (let vert of verticesList) {\r\n                //Apply scale and offset to the vertex\r\n                let correctedVert = [\r\n                    parseFloat(vert[0] * exportOptions.scale + exportOptions.offset[0]),\r\n                    parseFloat(vert[1] * exportOptions.scale + exportOptions.offset[1]),\r\n                    parseFloat(vert[2] * exportOptions.scale + exportOptions.offset[2])\r\n                ]\r\n                //v vx vy vz\r\n                compiled.push(`v ${correctedVert[0]} ${correctedVert[1]} ${correctedVert[2]}`)\r\n            }\r\n\r\n            //vt\r\n            for (let face of facesList) {\r\n                let width = parseFloat(textures[face.texture].width),\r\n                    height = parseFloat(textures[face.texture].height);\r\n\r\n                for (let vert of face.getSortedVertices()) {\r\n                    let uv = face.uv[vert].map(n => parseFloat(n));\r\n                    compiled.push(`vt ${Math.clamp(uv[0] / width, 0, 1)} ${Math.clamp(uv[1] / height, 0, 1)}`);\r\n                }\r\n            }\r\n\r\n            //vn\r\n            for (let face of facesList) {\r\n                //Apply scale and offset to the vertex\r\n                let norm = (0,_utils__WEBPACK_IMPORTED_MODULE_0__.normalizeVector)(face.getNormal());\r\n                compiled.push(`vn ${norm[0]} ${norm[1]} ${norm[2]}`)\r\n            }\r\n\r\n            let lastMaterial = null;\r\n            for (let face of facesList) {\r\n                if (lastMaterial !== face.texture) {\r\n                    lastMaterial = face.texture;\r\n                    compiled.push(\"usemtl \" + texture_names[face.texture]);\r\n                }\r\n                let faceVertices = (face.getSortedVertices()).map(f => verticesMap.indexOf(f) + vertice_id),\r\n                    verticeString = \"\";\r\n\r\n                verticeString += `${faceVertices[3]}/${faceVertices[0]}/${face_id} `;\r\n                verticeString += `${faceVertices[0]}/${faceVertices[1]}/${face_id} `;\r\n                verticeString += `${faceVertices[1]}/${faceVertices[2]}/${face_id} `;\r\n                verticeString += `${faceVertices[2]}/${faceVertices[3]}/${face_id}`;\r\n\r\n                compiled.push(\"f \" + verticeString);\r\n                face_id++;\r\n            }\r\n\r\n            vertice_id += verticesList.length;\r\n        }\r\n    }\r\n\r\n    return compiled.join(\"\\n\");\r\n}\r\n\r\nfunction getExportElements(options) {\r\n    let attachment = options && options.attachment;\r\n    if (!attachment)\r\n        return Outliner.elements;\r\n    return options.attachment.getAllChildren();\r\n}\r\n\r\nfunction compileMaterial() {\r\n    let compiled = [];\r\n    compiled.push(\"# \" + Settings.get(\"credit\"));\r\n    compiled.push(\"\");\r\n\r\n    for (let texture of Texture.all) {\r\n        let name = (String)(texture.name).replace(\".png\", \"\").toLowerCase();\r\n        compiled.push(\"newmtl \" + name);\r\n        compiled.push(\"map_Kd \" + (0,_utils__WEBPACK_IMPORTED_MODULE_0__.getResourceLocation)(texture.path.toLowerCase()));\r\n    }\r\n\r\n    return compiled.join(\"\\n\");\r\n}\n\n//# sourceURL=webpack://iitoolkit/./codec/obj_exporter.js?\n}");
 
 /***/ }),
 
@@ -595,174 +44,9 @@ function compileMaterial() {
 /*!**************************!*\
   !*** ./elements/aabb.js ***!
   \**************************/
-/*! exports provided: AABB, registerAABB */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "AABB", function() { return AABB; });
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "registerAABB", function() { return registerAABB; });
-class AABB extends OutlinerElement {
-    constructor(data, uuid) {
-        super(data, uuid)
-
-        for (var key in AABB.properties) {
-            AABB.properties[key].reset(this);
-        }
-        if (data && typeof data === 'object') {
-            this.extend(data)
-        }
-    }
-
-    get from() {
-        return this.origin;
-    }
-
-    getWorldCenter() {
-        return THREE.fastWorldPosition(this.mesh, Reusable.vec2);
-    }
-
-    extend(object) {
-        for (var key in AABB.properties) {
-            AABB.properties[key].merge(this, object)
-        }
-        if (typeof object.vertices == 'object') {
-            for (let key in object.vertices) {
-                this.vertices[key] = object.vertices[key].slice();
-            }
-        }
-        this.sanitizeName();
-        return this;
-    }
-
-    getUndoCopy() {
-        var copy = new AABB(this)
-        copy.uuid = this.uuid;
-        delete copy.parent;
-        return copy;
-    }
-
-    getSaveCopy() {
-        var el = {}
-        for (var key in AABB.properties) {
-            AABB.properties[key].copy(this, el)
-        }
-        el.type = 'aabb';
-        el.uuid = this.uuid
-        return el;
-    }
-}
-
-
-function registerAABB() {
-    AABB.prototype.title = tl('data.aabb');
-    AABB.prototype.type = 'aabb';
-    AABB.prototype.icon = 'border_outer';
-    AABB.prototype.movable = true;
-    AABB.prototype.scalable = true;
-    AABB.prototype.rotatable = false;
-    AABB.prototype.needsUniqueName = false;
-    AABB.prototype.menu = new Menu([
-        'group_elements',
-        '_',
-        'copy',
-        'paste',
-        'duplicate',
-        '_',
-        'rename',
-        'toggle_visibility',
-        'delete'
-    ]);
-    AABB.prototype.buttons = [
-        Outliner.buttons.export,
-        Outliner.buttons.locked,
-        Outliner.buttons.visibility,
-    ];
-
-    new Property(AABB, 'string', 'name', {default: 'aabb'})
-    new Property(AABB, 'vector', 'origin');
-    new Property(AABB, 'vector', 'scale', {default: [16, 16, 16]});
-    new Property(AABB, 'boolean', 'visibility', {default: true});
-    OutlinerElement.registerType(AABB, 'aabb');
-
-    new NodePreviewController(AABB, {
-        setup(element) {
-
-            const geometry = new THREE.BoxGeometry(element.scale[0] * 0.0625, element.scale[1] * 0.0625, element.scale[2] * 0.0625);
-            const material = new THREE.MeshLambertMaterial({color: 0xff0000, transparent: true, opacity: 0.25});
-            const mesh = new THREE.Mesh(geometry, material);
-
-            Project.nodes_3d[element.uuid] = mesh;
-            mesh.name = element.uuid;
-            mesh.type = element.type;
-            mesh.isElement = true;
-
-            element.preview_controller.updateTransform(element);
-
-            // Update
-            this.updateTransform(element);
-            mesh.visible = element.visibility;
-        },
-        updateGeometry(element) {
-            let mesh = Project.nodes_3d[element.uuid];
-            if (element.parent != 'root') {
-
-
-                let rot = Project.nodes_3d[element.parent.uuid].rotation.toVector3().multiplyScalar(-1);
-                mesh.rotation.setFromVector3(rot);
-            } else {
-                mesh.rotation.x = 0;
-                mesh.rotation.y = 0;
-                mesh.rotation.z = 0;
-            }
-
-
-        }
-    })
-
-    let add_aabb = new Action('add_aabb', {
-        name: 'Add AABB',
-        icon: 'border_outer',
-        category: 'edit',
-        keybind: new Keybind({key: 'n', ctrl: true}),
-        condition: () => Modes.edit || Modes.paint,
-        click: function () {
-
-            Undo.initEdit({outliner: true, elements: [], selection: true});
-            var aabb = new AABB({export: false}).init()
-            var group = getCurrentGroup();
-            aabb.addTo(group);
-
-            if (Format.bone_rig) {
-                if (group) {
-                    var pos1 = group.origin.slice()
-                    aabb.extend({
-                        origin: pos1.slice()
-                    })
-                }
-            }
-
-            if (Group.selected) Group.selected.unselect()
-            aabb.select()
-            Blockbench.dispatchEvent('add_aabb', {object: aabb})
-
-            return aabb
-        }
-    });
-    Interface.Panels.outliner.menu.addAction(add_aabb, '3')
-    MenuBar.menus.edit.addAction(add_aabb, '6')
-}
-
-/***/ }),
-
-/***/ "./elements/amt_text.js":
-/*!******************************!*\
-  !*** ./elements/amt_text.js ***!
-  \******************************/
-/*! no static exports found */
-/***/ (function(module, exports) {
-
-
+eval("{__webpack_require__.r(__webpack_exports__);\n/* harmony export */ __webpack_require__.d(__webpack_exports__, {\n/* harmony export */   AABB: () => (/* binding */ AABB),\n/* harmony export */   registerAABB: () => (/* binding */ registerAABB)\n/* harmony export */ });\nclass AABB extends OutlinerElement {\r\n    constructor(data, uuid) {\r\n        super(data, uuid)\r\n\r\n        for (var key in AABB.properties) {\r\n            AABB.properties[key].reset(this);\r\n        }\r\n        if (data && typeof data === 'object') {\r\n            this.extend(data)\r\n        }\r\n    }\r\n\r\n    get from() {\r\n        return this.origin;\r\n    }\r\n\r\n    getWorldCenter() {\r\n        return THREE.fastWorldPosition(this.mesh, Reusable.vec2);\r\n    }\r\n\r\n    extend(object) {\r\n        for (var key in AABB.properties) {\r\n            AABB.properties[key].merge(this, object)\r\n        }\r\n        if (typeof object.vertices == 'object') {\r\n            for (let key in object.vertices) {\r\n                this.vertices[key] = object.vertices[key].slice();\r\n            }\r\n        }\r\n        this.sanitizeName();\r\n        return this;\r\n    }\r\n\r\n    getUndoCopy() {\r\n        var copy = new AABB(this)\r\n        copy.uuid = this.uuid;\r\n        delete copy.parent;\r\n        return copy;\r\n    }\r\n\r\n    getSaveCopy() {\r\n        var el = {}\r\n        for (var key in AABB.properties) {\r\n            AABB.properties[key].copy(this, el)\r\n        }\r\n        el.type = 'aabb';\r\n        el.uuid = this.uuid\r\n        return el;\r\n    }\r\n}\r\n\r\n\r\nfunction registerAABB() {\r\n    AABB.prototype.title = tl('data.aabb');\r\n    AABB.prototype.type = 'aabb';\r\n    AABB.prototype.icon = 'border_outer';\r\n    AABB.prototype.movable = true;\r\n    AABB.prototype.scalable = true;\r\n    AABB.prototype.rotatable = false;\r\n    AABB.prototype.needsUniqueName = false;\r\n    AABB.prototype.menu = new Menu([\r\n        'group_elements',\r\n        '_',\r\n        'copy',\r\n        'paste',\r\n        'duplicate',\r\n        '_',\r\n        'rename',\r\n        'toggle_visibility',\r\n        'delete'\r\n    ]);\r\n    AABB.prototype.buttons = [\r\n        Outliner.buttons.export,\r\n        Outliner.buttons.locked,\r\n        Outliner.buttons.visibility,\r\n    ];\r\n\r\n    new Property(AABB, 'string', 'name', {default: 'aabb'})\r\n    new Property(AABB, 'vector', 'origin');\r\n    new Property(AABB, 'vector', 'scale', {default: [16, 16, 16]});\r\n    new Property(AABB, 'boolean', 'visibility', {default: true});\r\n    OutlinerElement.registerType(AABB, 'aabb');\r\n\r\n    new NodePreviewController(AABB, {\r\n        setup(element) {\r\n\r\n            const geometry = new THREE.BoxGeometry(element.scale[0] * 0.0625, element.scale[1] * 0.0625, element.scale[2] * 0.0625);\r\n            const material = new THREE.MeshLambertMaterial({color: 0xff0000, transparent: true, opacity: 0.25});\r\n            const mesh = new THREE.Mesh(geometry, material);\r\n\r\n            Project.nodes_3d[element.uuid] = mesh;\r\n            mesh.name = element.uuid;\r\n            mesh.type = element.type;\r\n            mesh.isElement = true;\r\n\r\n            element.preview_controller.updateTransform(element);\r\n\r\n            // Update\r\n            this.updateTransform(element);\r\n            mesh.visible = element.visibility;\r\n        },\r\n        updateGeometry(element) {\r\n            let mesh = Project.nodes_3d[element.uuid];\r\n            if (element.parent != 'root') {\r\n\r\n\r\n                let rot = Project.nodes_3d[element.parent.uuid].rotation.toVector3().multiplyScalar(-1);\r\n                mesh.rotation.setFromVector3(rot);\r\n            } else {\r\n                mesh.rotation.x = 0;\r\n                mesh.rotation.y = 0;\r\n                mesh.rotation.z = 0;\r\n            }\r\n\r\n\r\n        }\r\n    })\r\n\r\n    let add_aabb = new Action('add_aabb', {\r\n        name: 'Add AABB',\r\n        icon: 'border_outer',\r\n        category: 'edit',\r\n        keybind: new Keybind({key: 'n', ctrl: true}),\r\n        condition: () => Modes.edit || Modes.paint,\r\n        click: function () {\r\n\r\n            Undo.initEdit({outliner: true, elements: [], selection: true});\r\n            var aabb = new AABB({export: false}).init()\r\n            var group = getCurrentGroup();\r\n            aabb.addTo(group);\r\n\r\n            if (Format.bone_rig) {\r\n                if (group) {\r\n                    var pos1 = group.origin.slice()\r\n                    aabb.extend({\r\n                        origin: pos1.slice()\r\n                    })\r\n                }\r\n            }\r\n\r\n            if (Group.selected) Group.selected.unselect()\r\n            aabb.select()\r\n            Blockbench.dispatchEvent('add_aabb', {object: aabb})\r\n\r\n            return aabb\r\n        }\r\n    });\r\n    Interface.Panels.outliner.menu.addAction(add_aabb, '3')\r\n    MenuBar.menus.edit.addAction(add_aabb, '6')\r\n}\n\n//# sourceURL=webpack://iitoolkit/./elements/aabb.js?\n}");
 
 /***/ }),
 
@@ -770,63 +54,9 @@ function registerAABB() {
 /*!*****************!*\
   !*** ./main.js ***!
   \*****************/
-/*! no exports provided */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./utils */ "./utils.js");
-/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_utils__WEBPACK_IMPORTED_MODULE_0__);
-/* harmony import */ var _elements_aabb__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./elements/aabb */ "./elements/aabb.js");
-/* harmony import */ var _elements_amt_text__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./elements/amt_text */ "./elements/amt_text.js");
-/* harmony import */ var _elements_amt_text__WEBPACK_IMPORTED_MODULE_2___default = /*#__PURE__*/__webpack_require__.n(_elements_amt_text__WEBPACK_IMPORTED_MODULE_2__);
-/* harmony import */ var _codec_aabb_exporter__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./codec/aabb_exporter */ "./codec/aabb_exporter.js");
-/* harmony import */ var _codec_obj_exporter__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./codec/obj_exporter */ "./codec/obj_exporter.js");
-/* harmony import */ var _codec_amt_animation_exporter__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./codec/amt_animation_exporter */ "./codec/amt_animation_exporter.js");
-/* harmony import */ var _misc_actions__WEBPACK_IMPORTED_MODULE_6__ = __webpack_require__(/*! ./misc_actions */ "./misc_actions.js");
-// import helloWorld from './hello_world'
-
-
-
-
-// import registerWire from './elements/amt_wire'
-
-
-
-
-
-
-
-
-
-
-
-var iiBarMenu = null;
-
-const plugin = Plugin.register('iitoolkit', {
-	title: 'Immersive Intelligence Toolkit',
-	author: 'Pabilo8',
-	icon: 'icon-format_java',
-	description: 'Utility plugin for Immersive Intelligence mod models. https://github.com/Pabilo8/ImmersiveIntelligence',
-	about: 'Go to Animation -> Export AMT...',
-	tags: ["Minecraft: Java Edition"],
-	version: '0.3.0',
-	min_version: '4.0.0',
-	variant: 'both',
-	onload() {
-		Object(_elements_aabb__WEBPACK_IMPORTED_MODULE_1__["registerAABB"])();
-
-		iiBarMenu = new BarMenu("iitoolkit", [_misc_actions__WEBPACK_IMPORTED_MODULE_6__["ungroup"], _codec_amt_animation_exporter__WEBPACK_IMPORTED_MODULE_5__["exportAnimationAMT"], _codec_obj_exporter__WEBPACK_IMPORTED_MODULE_4__["exportAMTModel"], _codec_aabb_exporter__WEBPACK_IMPORTED_MODULE_3__["exportAABB"]]);
-		MenuBar.addAction(_codec_obj_exporter__WEBPACK_IMPORTED_MODULE_4__["exportAMTModel"], 'file.export.0');
-	},
-	onunload() {
-		_codec_amt_animation_exporter__WEBPACK_IMPORTED_MODULE_5__["exportAnimationAMT"].delete();
-		_codec_obj_exporter__WEBPACK_IMPORTED_MODULE_4__["exportAMTModel"].delete();
-		_codec_aabb_exporter__WEBPACK_IMPORTED_MODULE_3__["exportAABB"].delete();
-		_misc_actions__WEBPACK_IMPORTED_MODULE_6__["ungroup"].delete();
-	}
-});
-
+eval("{__webpack_require__.r(__webpack_exports__);\n/* harmony import */ var _utils__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ./utils */ \"./utils.js\");\n/* harmony import */ var _elements_aabb__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./elements/aabb */ \"./elements/aabb.js\");\n/* harmony import */ var _codec_aabb_exporter__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./codec/aabb_exporter */ \"./codec/aabb_exporter.js\");\n/* harmony import */ var _codec_obj_exporter__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./codec/obj_exporter */ \"./codec/obj_exporter.js\");\n/* harmony import */ var _codec_amt_animation_exporter__WEBPACK_IMPORTED_MODULE_4__ = __webpack_require__(/*! ./codec/amt_animation_exporter */ \"./codec/amt_animation_exporter.js\");\n/* harmony import */ var _misc_actions__WEBPACK_IMPORTED_MODULE_5__ = __webpack_require__(/*! ./misc_actions */ \"./misc_actions.js\");\n// import helloWorld from './hello_world'\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\nvar iiBarMenu = null;\r\n\r\nconst plugin = Plugin.register('iitoolkit', {\r\n\ttitle: 'Immersive Intelligence Toolkit',\r\n\tauthor: 'Pabilo8',\r\n\ticon: 'icon-format_java',\r\n\tdescription: 'Utility plugin for Immersive Intelligence mod models. https://github.com/Pabilo8/ImmersiveIntelligence',\r\n\tabout: 'Go to Animation -> Export AMT...',\r\n\ttags: [\"Minecraft: Java Edition\"],\r\n\tversion: '0.4.0',\r\n\tmin_version: '4.0.0',\r\n\tvariant: 'both',\r\n\tonload() {\r\n\t\t(0,_elements_aabb__WEBPACK_IMPORTED_MODULE_1__.registerAABB)();\r\n\r\n\t\tiiBarMenu = new BarMenu(\"iitoolkit\", [_misc_actions__WEBPACK_IMPORTED_MODULE_5__.ungroup, _codec_amt_animation_exporter__WEBPACK_IMPORTED_MODULE_4__.exportAnimationAMT, _codec_obj_exporter__WEBPACK_IMPORTED_MODULE_3__.exportAMTModel, _codec_aabb_exporter__WEBPACK_IMPORTED_MODULE_2__.exportAABB],{\r\n\t\t\tname: 'Immersive Intelligence Toolkit'\r\n\t\t});\r\n\t\tMenuBar.addAction(_codec_obj_exporter__WEBPACK_IMPORTED_MODULE_3__.exportAMTModel, 'file.export.0');\r\n\t\t//MenuBar.addAction(exportOBJStaticAction, 'file.export.0');\r\n\t\t//MenuBar.addAction(exportOBJDynamicAction, 'file.export.0');\r\n\r\n\t\tMenuBar.menus.file.addAction(_codec_obj_exporter__WEBPACK_IMPORTED_MODULE_3__.exportOBJStaticAction, \"export.1\");\r\n\t\tMenuBar.menus.file.addAction(_codec_obj_exporter__WEBPACK_IMPORTED_MODULE_3__.exportOBJDynamicAction, \"export.1\");\r\n\r\n\t\tlet hook = Blockbench.on(\"quick_save_model\", () => {\r\n\t\t\tfor (let collection of Collection.all) {\r\n\t\t\t\tif (collection.export_codec === _codec_obj_exporter__WEBPACK_IMPORTED_MODULE_3__.objCodec.id)\r\n\t\t\t\t\t_codec_obj_exporter__WEBPACK_IMPORTED_MODULE_3__.objCodec.writeCollection(collection);\r\n\t\t\t\telse if (collection.export_codec === _codec_obj_exporter__WEBPACK_IMPORTED_MODULE_3__.objIECodec.id)\r\n\t\t\t\t\t_codec_obj_exporter__WEBPACK_IMPORTED_MODULE_3__.objIECodec.writeCollection(collection);\r\n\r\n\t\t\t}\r\n\t\t});\r\n\t},\r\n\tonunload() {\r\n\t\t_codec_amt_animation_exporter__WEBPACK_IMPORTED_MODULE_4__.exportAnimationAMT.delete();\r\n\t\t_codec_obj_exporter__WEBPACK_IMPORTED_MODULE_3__.exportAMTModel.delete();\r\n\t\t_codec_aabb_exporter__WEBPACK_IMPORTED_MODULE_2__.exportAABB.delete();\r\n\t\t_misc_actions__WEBPACK_IMPORTED_MODULE_5__.ungroup.delete();\r\n\t\t_codec_obj_exporter__WEBPACK_IMPORTED_MODULE_3__.exportOBJStaticAction.delete();\r\n\t\t_codec_obj_exporter__WEBPACK_IMPORTED_MODULE_3__.exportOBJDynamicAction.delete();\r\n\t}\r\n});\r\n\n\n//# sourceURL=webpack://iitoolkit/./main.js?\n}");
 
 /***/ }),
 
@@ -834,21 +64,9 @@ const plugin = Plugin.register('iitoolkit', {
 /*!*************************!*\
   !*** ./misc_actions.js ***!
   \*************************/
-/*! exports provided: ungroup */
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
-"use strict";
-__webpack_require__.r(__webpack_exports__);
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ungroup", function() { return ungroup; });
-var ungroup = new Action('ungroup', {
-    name: 'Ungroup',
-    description: 'Removes all groups',
-    icon: 'fas.fa-fire-extinguisher',
-    click: function () {
-        while (Project.groups.length > 0)
-            Project.groups.forEach(g => g.resolve());
-    }
-});
+eval("{__webpack_require__.r(__webpack_exports__);\n/* harmony export */ __webpack_require__.d(__webpack_exports__, {\n/* harmony export */   ungroup: () => (/* binding */ ungroup)\n/* harmony export */ });\nvar ungroup = new Action('ungroup', {\r\n    name: 'Ungroup',\r\n    description: 'Removes all groups',\r\n    icon: 'fas.fa-fire-extinguisher',\r\n    click: function () {\r\n        while (Project.groups.length > 0)\r\n            Project.groups.forEach(g => g.resolve());\r\n    }\r\n});\n\n//# sourceURL=webpack://iitoolkit/./misc_actions.js?\n}");
 
 /***/ }),
 
@@ -856,41 +74,73 @@ var ungroup = new Action('ungroup', {
 /*!******************!*\
   !*** ./utils.js ***!
   \******************/
-/*! no static exports found */
-/***/ (function(module, exports) {
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
 
-//Functions
-
-/**
- *
- * @param {string} file path to the texture file
- * @returns {string} minecraft resource location path of the file
- */
-function getResourceLocation(file) {
-    //trim
-    file = file.substring(0, file.includes(".") ? file.lastIndexOf('.') : file.length);
-    file = file.replaceAll("\\", "/");
-
-    //attempt looking for a resource location in path
-    if (file.includes("assets") && file.includes("textures")) {
-        file = file.substring(file.indexOf("assets") + ("assets/".length));
-        let domain = file.substring(0, file.indexOf("/textures"));
-        file = file.substring(file.indexOf("/textures") + "/textures/".length, file.length);
-        return `${domain}:${file}`;
-    }
-    //no resource location in path
-    if (!file.includes("/"))
-        return file;
-    return "immersiveintelligence:block" + file.substring(file.lastIndexOf("/"), file.length);
-}
-
-function normalizeVector(normal) {
-    normal = normal.map(n => parseFloat(n));
-    let max = Math.max.apply(null, normal.map(n => Math.abs(n)));
-    return normal.map(n => n / max);
-}
-
+eval("{__webpack_require__.r(__webpack_exports__);\n/* harmony export */ __webpack_require__.d(__webpack_exports__, {\n/* harmony export */   getResourceLocation: () => (/* binding */ getResourceLocation),\n/* harmony export */   normalizeVector: () => (/* binding */ normalizeVector)\n/* harmony export */ });\n//Functions\r\n\r\n/**\r\n *\r\n * @param {string} file path to the texture file\r\n * @returns {string} minecraft resource location path of the file\r\n */\r\nfunction getResourceLocation(file) {\r\n    //trim\r\n    file = file.substring(0, file.includes(\".\") ? file.lastIndexOf('.') : file.length);\r\n    file = file.replaceAll(\"\\\\\", \"/\");\r\n\r\n    //attempt looking for a resource location in path\r\n    if (file.includes(\"assets\") && file.includes(\"textures\")) {\r\n        file = file.substring(file.indexOf(\"assets\") + (\"assets/\".length));\r\n        let domain = file.substring(0, file.indexOf(\"/textures\"));\r\n        file = file.substring(file.indexOf(\"/textures\") + \"/textures/\".length, file.length);\r\n        return `${domain}:${file}`;\r\n    }\r\n    //no resource location in path\r\n    if (!file.includes(\"/\"))\r\n        return file;\r\n    return \"immersiveintelligence:blocks\" + file.substring(file.lastIndexOf(\"/\"), file.length);\r\n}\r\n\r\nfunction normalizeVector(normal) {\r\n    normal = normal.map(n => parseFloat(n));\r\n    let max = Math.max.apply(null, normal.map(n => Math.abs(n)));\r\n    return normal.map(n => n / max);\r\n}\r\n\n\n//# sourceURL=webpack://iitoolkit/./utils.js?\n}");
 
 /***/ })
 
-/******/ });
+/******/ 	});
+/************************************************************************/
+/******/ 	// The module cache
+/******/ 	var __webpack_module_cache__ = {};
+/******/ 	
+/******/ 	// The require function
+/******/ 	function __webpack_require__(moduleId) {
+/******/ 		// Check if module is in cache
+/******/ 		var cachedModule = __webpack_module_cache__[moduleId];
+/******/ 		if (cachedModule !== undefined) {
+/******/ 			return cachedModule.exports;
+/******/ 		}
+/******/ 		// Create a new module (and put it into the cache)
+/******/ 		var module = __webpack_module_cache__[moduleId] = {
+/******/ 			// no module.id needed
+/******/ 			// no module.loaded needed
+/******/ 			exports: {}
+/******/ 		};
+/******/ 	
+/******/ 		// Execute the module function
+/******/ 		__webpack_modules__[moduleId](module, module.exports, __webpack_require__);
+/******/ 	
+/******/ 		// Return the exports of the module
+/******/ 		return module.exports;
+/******/ 	}
+/******/ 	
+/************************************************************************/
+/******/ 	/* webpack/runtime/define property getters */
+/******/ 	(() => {
+/******/ 		// define getter functions for harmony exports
+/******/ 		__webpack_require__.d = (exports, definition) => {
+/******/ 			for(var key in definition) {
+/******/ 				if(__webpack_require__.o(definition, key) && !__webpack_require__.o(exports, key)) {
+/******/ 					Object.defineProperty(exports, key, { enumerable: true, get: definition[key] });
+/******/ 				}
+/******/ 			}
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/hasOwnProperty shorthand */
+/******/ 	(() => {
+/******/ 		__webpack_require__.o = (obj, prop) => (Object.prototype.hasOwnProperty.call(obj, prop))
+/******/ 	})();
+/******/ 	
+/******/ 	/* webpack/runtime/make namespace object */
+/******/ 	(() => {
+/******/ 		// define __esModule on exports
+/******/ 		__webpack_require__.r = (exports) => {
+/******/ 			if(typeof Symbol !== 'undefined' && Symbol.toStringTag) {
+/******/ 				Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' });
+/******/ 			}
+/******/ 			Object.defineProperty(exports, '__esModule', { value: true });
+/******/ 		};
+/******/ 	})();
+/******/ 	
+/************************************************************************/
+/******/ 	
+/******/ 	// startup
+/******/ 	// Load entry module and return exports
+/******/ 	// This entry module can't be inlined because the eval devtool is used.
+/******/ 	var __webpack_exports__ = __webpack_require__("./main.js");
+/******/ 	
+/******/ })()
+;

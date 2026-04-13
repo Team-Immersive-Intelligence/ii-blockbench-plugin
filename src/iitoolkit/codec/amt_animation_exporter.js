@@ -1,4 +1,4 @@
-export var lastAnimationState = true, lastAMTState = true;
+export var lastAnimationState = true, exportAnimations = {};
 
 export var exportAnimationAMT = new Action('export_animation_amt', {
     name: 'Export AMT Animation...',
@@ -31,11 +31,9 @@ export var exportAnimationAMT = new Action('export_animation_amt', {
             form["1_" + key.hashCode()] = {
                 label: " " + key + "",
                 type: 'checkbox',
-                value: lastAnimationState
+                value: exportAnimations.has(key) ? exportAnimations[key] : true,
             };
         })
-
-        form["2_amt"] = {label: "Export AMT Metadata", type: 'checkbox', value: lastAMTState};
 
         const dialog = new Dialog({
             id: 'animation_export',
@@ -53,8 +51,6 @@ export var exportAnimationAMT = new Action('export_animation_amt', {
                     //to prevent infinite looping
 
                     newValues["0_animations"] = lastAnimationState = allowAnimations;
-                    newValues["2_amt"] = form_result["2_amt"];
-
                     dialog.setFormValues(newValues);
                 }
 
@@ -70,7 +66,7 @@ export var exportAnimationAMT = new Action('export_animation_amt', {
                     if (keys.includes(animation.name)) {
                         Blockbench.export({
                             resource_id: 'animation',
-                            type: 'JSON Animation',
+                            type: 'AMT JSON Animation',
                             extensions: ['json'],
                             name: animation.name,
                             content: autoStringify(compileAnimation(animation)),
@@ -78,18 +74,6 @@ export var exportAnimationAMT = new Action('export_animation_amt', {
 
                     }
                 })
-
-                lastAMTState = form_result["2_amt"];
-
-                if (form_result["2_amt"])
-                    Blockbench.export({
-                        resource_id: 'amt',
-                        type: 'AMT Data',
-                        extensions: ['amt'],
-                        name: Project.name + ".obj" + ".amt",
-                        content: autoStringify(compileAMT()),
-                    });
-
             }
         })
         dialog.show();
@@ -125,10 +109,9 @@ function compileAnimation(animation) {
                         const timecodeString = kf.getTimecodeString();
 
                         let arr = kf.getArray();
-                        //rotation Y should be flipped
-                        //bad solution for a self-made problem
-                        if (channel == 'rotation')
-                            arr = [arr[0], -arr[1], arr[2]];
+                        //rotation X should be flipped
+                        if (channel === 'rotation')
+                            arr = [-arr[0], arr[1], arr[2]];
 
                         keyframe = {
                             time: parseFloat(timecodeString) / maxlength,

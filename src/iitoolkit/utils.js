@@ -5,7 +5,7 @@
  * @param {string} file path to the texture file
  * @returns {string} minecraft resource location path of the file
  */
-function getResourceLocation(file) {
+export function getResourceLocation(file) {
     //trim
     file = file.substring(0, file.includes(".") ? file.lastIndexOf('.') : file.length);
     file = file.replaceAll("\\", "/");
@@ -20,10 +20,10 @@ function getResourceLocation(file) {
     //no resource location in path
     if (!file.includes("/"))
         return file;
-    return "immersiveintelligence:block" + file.substring(file.lastIndexOf("/"), file.length);
+    return "immersiveintelligence:blocks" + file.substring(file.lastIndexOf("/"), file.length);
 }
 
-function normalizeVector(normal) {
+export function normalizeVector(normal) {
     normal = normal.map(n => parseFloat(n));
     let max = Math.max.apply(null, normal.map(n => Math.abs(n)));
     return normal.map(n => n / max);

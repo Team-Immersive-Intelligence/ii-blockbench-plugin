@@ -2,7 +2,6 @@ const PathModule = require('path');
 
 module.exports = {
 	mode: 'development',
-	devtool: 'none',
 	target: 'node',
 	entry: './main.js',
 	output: {

@@ -1,11 +1,10 @@
 //-- Export Dialogue --//
-import './../utils'
+import {getResourceLocation, normalizeVector} from '../utils'
 
 export var exportOptions = {
-    export_mode: "mode_groups",
-    blacklist: false,
-    blacklisted_groups: "",
-    new_format: "",
+    export_mode: "obj",
+    obj_amt: true,
+    obj_mtl: true,
     scale: 0.0625,
     offset: [-0.5, 0, -0.5]
 };
@@ -17,43 +16,27 @@ export var exportAMTModel = new Action('export_amt_model', {
     click: function () {
         const form = {};
 
-        form["export_mode"] = {
-            label: "Generation Mode", type: "select", options: {
-                mode_groups: "Export groups as separate models",
-                mode_mixed: "Export group \'main\' and other groups (merged as a single model) separately",
-                mode_single: "Export all as single model",
-                mode_parts: "Export single model with parts as separate objects (instead of groups)"
-            }, value: exportOptions.export_mode
-        }
-
         form["offset"] = {label: "Model offset", type: 'vector', value: exportOptions.offset};
         form["scale"] = {label: "Scale", type: 'number', value: exportOptions.scale};
 
-        form["blacklist"] = {label: "Blacklist groups", type: 'checkbox', value: exportOptions.blacklist};
-        form["blacklisted_groups"] = {
-            label: "Blacklisted",
-            type: 'textarea',
-            text: exportOptions.blacklisted_groups,
-            description: 'Separate group names with comma',
-            condition: () => exportOptions.blacklist
-        };
-
-        form["new_format"] = {
-            label: "Use experimental joint .amt format",
-            type: 'checkbox',
-            value: exportOptions.new_format
-        };
+        form["export_mode"] = {
+            label: "Export Format", type: "select", options: {
+                none: "None",
+                obj: "Static OBJ Model",
+                obj_ie: "Dynamic OBJ Model"
+            }, value: exportOptions.export_mode
+        }
         form["obj_amt"] = {
             label: "Export .obj.amt properties",
             type: 'checkbox',
-            value: !exportOptions.new_format,
-            readonly: exportOptions.new_format
+            value: exportOptions.obj_amt,
+            readonly: exportOptions.obj_amt
         };
         form["obj_mtl"] = {
             label: "Export .mtl properties",
             type: 'checkbox',
-            value: !exportOptions.new_format,
-            readonly: exportOptions.new_format
+            value: exportOptions.obj_mtl,
+            readonly: exportOptions.obj_mtl
         };
 
         const dialog = new Dialog({
@@ -64,35 +47,21 @@ export var exportAMTModel = new Action('export_amt_model', {
                 let bList = form_result["blacklist"];
                 let nFormat = form_result["new_format"];
                 exportOptions.blacklisted_groups = form_result["blacklisted_groups"];
-
-                if (bList != exportOptions.blacklist) {
-                    exportOptions.blacklist = bList;
-                    dialog.setFormValues(form_result);
-                }
-                if (nFormat != exportOptions.new_format) {
-                    exportOptions.new_format = nFormat;
-                    if (nFormat)
-                        form_result["obj_amt"] = form_result["obj_mtl"] = false;
-                }
-
             },
             onConfirm(form_result) {
                 exportOptions = form_result;
                 dialog.hide();
 
+                console.log("Exporting II model in mode " + form_result["export_mode"] + "...");
                 //Export 3D Geometry
                 switch (form_result["export_mode"]) {
-                    case "mode_groups":
-
-                        break;
-                    case "mode_mixed":
-
-                        break;
-                    case "mode_single":
+                    case "none":
+                        break
+                    case "obj":
                         objCodec.export();
                         break;
-                    case "mode_parts":
-
+                    case "obj_ie":
+                        objIECodec.export();
                         break;
                 }
 
@@ -112,6 +81,34 @@ export var exportAMTModel = new Action('export_amt_model', {
             }
         });
         dialog.show();
+    }
+});
+
+export var exportOBJStaticAction = new Action("export_obj_static", {
+    name: "Export Static OBJ",
+    description: "Export a static OBJ model using II Toolkit",
+    icon: "icon-gltf",
+    category: "file",
+    condition: {
+        modes: ['edit'],
+        method: () => Format?.meshes,
+    },
+    click: function () {
+        objCodec.export();
+    }
+});
+
+export var exportOBJDynamicAction = new Action("export_obj_dynamic", {
+    name: "Export Dynamic OBJ",
+    description: "Export a dynamic OBJ model using II Toolkit",
+    icon: "icon-gltf",
+    category: "file",
+    condition: {
+        modes: ['edit'],
+        method: () => Format?.meshes,
+    },
+    click: function () {
+        objIECodec.export();
     }
 });
 
@@ -147,11 +144,70 @@ function compileAMT() {
 }
 
 export var objCodec = new Codec("ii_obj", {
-    name: "II OBJ",
-    extension: "obj.ie",
-    remember: false,
+    name: "II Static OBJ",
+    support_partial_export: true,
+    extension: "obj",
+    remember: true,
+    export_action: exportOBJStaticAction,
+
     compile(options) {
-        return compileModel();
+        return compileModel(options);
+    },
+
+    async exportCollection(collection) {
+        this.context = collection;
+        try {
+            await this.export({attachment: collection});
+            if ("saved" in collection) collection.saved = true;
+        } finally {
+            this.context = null;
+        }
+    },
+
+    async writeCollection(collection) {
+        this.context = collection;
+        try {
+            this.write(this.compile({attachment: collection}), collection.export_path);
+            if ("saved" in collection) collection.saved = true;
+        } finally {
+            this.context = null;
+        }
+    }
+});
+
+export var objIECodec = new Codec("ii_obj_ie", {
+    name: "II Dynamic OBJ",
+    support_partial_export: true,
+    extension: "obj.ie",
+    remember: true,
+    export_action: exportOBJDynamicAction,
+
+    compile(options) {
+        return compileModel(options);
+    },
+
+    async exportCollection(collection) {
+        this.context = collection;
+        try {
+            await this.export({attachment: collection});
+            if ("saved" in collection)
+                collection.saved = true;
+        } finally {
+            this.context = null;
+        }
+    },
+
+    async writeCollection(collection) {
+        this.context = collection;
+        try {
+            const exportPath = String(collection.export_path ?? "").replace(/(\.obj\.ie|\.obj|\.ie)+$/i, "") + ".obj.ie";
+            this.write(this.compile({attachment: collection}), exportPath);
+            collection.export_path = exportPath;
+            if ("saved" in collection)
+                collection.saved = true;
+        } finally {
+            this.context = null;
+        }
     }
 });
 
@@ -159,13 +215,15 @@ export var mtlCodec = new Codec("mtl", {
     name: "II MTL",
     extension: "mtl",
     remember: false,
+
     compile(options) {
-        return compileMaterial();
+        return compileMaterial(options);
     }
 });
 
-function compileModel() {
+function compileModel(options) {
     let compiled = [], textures = [], texture_names = [];
+    let exportElements = getExportElements(options);
 
     compiled.push("# " + Settings.get("credit"));
     compiled.push(`mtllib ${Project.name}.mtl\n`);
@@ -176,13 +234,14 @@ function compileModel() {
     });
 
     let vertice_id = 1, face_id = 1;
-    for (let element of Outliner.elements) {
+    for (let element of exportElements) {
         //o -> v -> vt -> vn -> usemtl / f
 
-        compiled.push("o " + element.name);
         if (element instanceof Cube) {
+            compiled.push("o " + element.name);
 
         } else if (element instanceof Mesh) {
+            compiled.push("o " + element.name);
             let verticesMap = Object.keys(element.vertices);
             let verticesList = element.vertice_list;
             let facesList = [];
@@ -206,7 +265,7 @@ function compileModel() {
 
                 for (let vert of face.getSortedVertices()) {
                     let uv = face.uv[vert].map(n => parseFloat(n));
-                    compiled.push(`vt ${uv[0] / width} ${uv[1] / height}`);
+                    compiled.push(`vt ${Math.clamp(uv[0] / width, 0, 1)} ${Math.clamp(uv[1] / height, 0, 1)}`);
                 }
             }
 
@@ -219,7 +278,7 @@ function compileModel() {
 
             let lastMaterial = null;
             for (let face of facesList) {
-                if (lastMaterial != face.texture) {
+                if (lastMaterial !== face.texture) {
                     lastMaterial = face.texture;
                     compiled.push("usemtl " + texture_names[face.texture]);
                 }
@@ -240,6 +299,13 @@ function compileModel() {
     }
 
     return compiled.join("\n");
+}
+
+function getExportElements(options) {
+    let attachment = options && options.attachment;
+    if (!attachment)
+        return Outliner.elements;
+    return options.attachment.getAllChildren();
 }
 
 function compileMaterial() {
