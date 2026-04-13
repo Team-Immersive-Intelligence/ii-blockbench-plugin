@@ -6,7 +6,8 @@ import './elements/aabb'
 import './codec/aabb_exporter'
 import './codec/obj_exporter'
 import './codec/amt_animation_exporter'
-import {registerAABB} from "./elements/aabb";
+import {registerAABB, registerAABBActions, unregisterAABBActions} from "./elements/aabb";
+import {registerBullet, unregisterBulletActions} from "./elements/bullet";
 import {exportAnimationAMT} from "./codec/amt_animation_exporter";
 import {exportAABB} from "./codec/aabb_exporter";
 import {ungroup} from "./misc_actions";
@@ -27,13 +28,13 @@ const plugin = Plugin.register('iitoolkit', {
 	variant: 'both',
 	onload() {
 		registerAABB();
+		registerAABBActions();
+		registerBullet();
 
 		iiBarMenu = new BarMenu("iitoolkit", [ungroup, exportAnimationAMT, exportAMTModel, exportAABB],{
 			name: 'Immersive Intelligence Toolkit'
 		});
 		MenuBar.addAction(exportAMTModel, 'file.export.0');
-		//MenuBar.addAction(exportOBJStaticAction, 'file.export.0');
-		//MenuBar.addAction(exportOBJDynamicAction, 'file.export.0');
 
 		MenuBar.menus.file.addAction(exportOBJStaticAction, "export.1");
 		MenuBar.menus.file.addAction(exportOBJDynamicAction, "export.1");
@@ -49,6 +50,8 @@ const plugin = Plugin.register('iitoolkit', {
 		});
 	},
 	onunload() {
+		unregisterAABBActions();
+		unregisterBulletActions();
 		exportAnimationAMT.delete();
 		exportAMTModel.delete();
 		exportAABB.delete();

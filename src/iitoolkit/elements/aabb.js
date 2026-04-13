@@ -1,17 +1,20 @@
+import {getBoxLineVertices} from '../utils';
+
 export class AABB extends OutlinerElement {
     constructor(data, uuid) {
-        super(data, uuid)
+        super(data, uuid);
 
-        for (var key in AABB.properties) {
+        //Initialize properties with defaults
+        for (let key in AABB.properties) {
             AABB.properties[key].reset(this);
         }
         if (data && typeof data === 'object') {
-            this.extend(data)
+            this.extend(data);
         }
     }
 
-    get from() {
-        return this.origin;
+    get origin() {
+        return this.position;
     }
 
     getWorldCenter() {
@@ -19,133 +22,215 @@ export class AABB extends OutlinerElement {
     }
 
     extend(object) {
-        for (var key in AABB.properties) {
-            AABB.properties[key].merge(this, object)
-        }
-        if (typeof object.vertices == 'object') {
-            for (let key in object.vertices) {
-                this.vertices[key] = object.vertices[key].slice();
-            }
+        for (let key in AABB.properties) {
+            AABB.properties[key].merge(this, object);
         }
         this.sanitizeName();
         return this;
     }
 
     getUndoCopy() {
-        var copy = new AABB(this)
+        let copy = new AABB(this);
         copy.uuid = this.uuid;
         delete copy.parent;
         return copy;
     }
 
     getSaveCopy() {
-        var el = {}
-        for (var key in AABB.properties) {
-            AABB.properties[key].copy(this, el)
+        let el = {};
+        for (let key in AABB.properties) {
+            AABB.properties[key].copy(this, el);
         }
         el.type = 'aabb';
-        el.uuid = this.uuid
+        el.uuid = this.uuid;
         return el;
     }
+
+    select(event, isOutlinerClick) {
+        super.select(event, isOutlinerClick);
+        if (Animator.open && Animation.selected) {
+            Animation.selected.getBoneAnimator(this).select(true);
+        }
+        return this;
+    }
+
+    unselect(...args) {
+        super.unselect(...args);
+        if (Animator.open && Timeline.selected_animator && Timeline.selected_animator.element == this) {
+            Timeline.selected_animator.selected = false;
+        }
+    }
+
+    //Static behavior flags
+    static behavior = {
+        unique_name: true,
+        movable: true,
+        rotatable: false,   //AABB cannot be rotated
+        scalable: false
+    };
 }
+
+let deletables = [];
 
 
 export function registerAABB() {
-    AABB.prototype.title = tl('data.aabb');
+    //----- AABB Element Class -----
+    //Assign prototype properties
+    AABB.prototype.title = 'AABB';
     AABB.prototype.type = 'aabb';
-    AABB.prototype.icon = 'border_outer';
+    AABB.prototype.icon = 'fas fa-cube';
     AABB.prototype.movable = true;
-    AABB.prototype.scalable = true;
     AABB.prototype.rotatable = false;
-    AABB.prototype.needsUniqueName = false;
+    AABB.prototype.needsUniqueName = true;
     AABB.prototype.menu = new Menu([
-        'group_elements',
+        'edit_aabb_properties',
         '_',
-        'copy',
-        'paste',
-        'duplicate',
+        ...Outliner.control_menu_group,
         '_',
         'rename',
-        'toggle_visibility',
         'delete'
     ]);
     AABB.prototype.buttons = [
-        Outliner.buttons.export,
         Outliner.buttons.locked,
         Outliner.buttons.visibility,
     ];
 
-    new Property(AABB, 'string', 'name', {default: 'aabb'})
-    new Property(AABB, 'vector', 'origin');
-    new Property(AABB, 'vector', 'scale', {default: [16, 16, 16]});
-    new Property(AABB, 'boolean', 'visibility', {default: true});
+    //----- Properties -----
+    new Property(AABB, 'string', 'name', { default: 'aabb' });
+    new Property(AABB, 'vector', 'position');
+    //No rotation property needed, but we keep it for compatibility? Actually we omit rotation.
+    new Property(AABB, 'vector2', 'size', {
+        default: [2, 2], //width (x and z) and height
+        inputs: {
+            element_panel: {
+                input: { label: 'Size', type: 'vector', dimensions: 2 },
+                onChange() {
+                    Canvas.updateView({ elements: AABB.selected, element_aspects: { transform: true } });
+                }
+            }
+        }
+    });
+    new Property(AABB, 'boolean', 'visibility', { default: true });
 
     OutlinerElement.registerType(AABB, 'aabb');
 
+    //----- Preview Controller -----
     new NodePreviewController(AABB, {
         setup(element) {
+            // Create line segments only (no fill)
+            const vertices = getBoxLineVertices(element.size[0], element.size[1]);
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
 
-            const geometry = new THREE.BoxGeometry(element.scale[0] * 0.0625, element.scale[1] * 0.0625, element.scale[2] * 0.0625);
-            const material = new THREE.MeshLambertMaterial({color: 0xff0000, transparent: true, opacity: 0.25});
-            const mesh = new THREE.Mesh(geometry, material);
+            const material = new THREE.LineBasicMaterial({ color: gizmo_colors.grid });
+            const lines = new THREE.LineSegments(geometry, material);
 
-            Project.nodes_3d[element.uuid] = mesh;
-            mesh.name = element.uuid;
-            mesh.type = element.type;
-            mesh.isElement = true;
+            Project.nodes_3d[element.uuid] = lines;
+            lines.name = element.uuid;
+            lines.type = element.type;
+            lines.isElement = true;
+            lines.visible = element.visibility;
 
-            element.preview_controller.updateTransform(element);
-
-            // Update
+            // No scaling; geometry will be updated on size change
             this.updateTransform(element);
-            mesh.visible = element.visibility;
+            this.dispatchEvent('setup', { element });
         },
+
+        updateTransform(element) {
+            // Base method sets position and rotation from properties
+            NodePreviewController.prototype.updateTransform.call(this, element);
+            const mesh = element.mesh;
+
+            // Force rotation to zero (AABB cannot rotate)
+            mesh.rotation.set(0, 0, 0);
+
+            // Regenerate geometry to match current size
+            this.updateGeometry(element);
+
+            this.dispatchEvent('update_transform', { element });
+        },
+
         updateGeometry(element) {
-            let mesh = Project.nodes_3d[element.uuid];
-            if (element.parent != 'root') {
+            const vertices = getBoxLineVertices(element.size[0], element.size[1]);
+            element.mesh.geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+            this.dispatchEvent('update_geometry', { element });
+        },
 
-
-                let rot = Project.nodes_3d[element.parent.uuid].rotation.toVector3().multiplyScalar(-1);
-                mesh.rotation.setFromVector3(rot);
-            } else {
-                mesh.rotation.x = 0;
-                mesh.rotation.y = 0;
-                mesh.rotation.z = 0;
-            }
-
-
-        }
-    })
-
-    let add_aabb = new Action('add_aabb', {
-        name: 'Add AABB',
-        icon: 'border_outer',
-        category: 'edit',
-        keybind: new Keybind({key: 'n', ctrl: true}),
-        condition: () => Modes.edit || Modes.paint,
-        click: function () {
-
-            Undo.initEdit({outliner: true, elements: [], selection: true});
-            var aabb = new AABB({export: false}).init()
-            var group = getCurrentGroup();
-            aabb.addTo(group);
-
-            if (Format.bone_rig) {
-                if (group) {
-                    var pos1 = group.origin.slice()
-                    aabb.extend({
-                        origin: pos1.slice()
-                    })
-                }
-            }
-
-            if (Group.selected) Group.selected.unselect()
-            aabb.select()
-            Blockbench.dispatchEvent('add_aabb', {object: aabb})
-
-            return aabb
+        updateSelection(element) {
+            const mesh = element.mesh;
+            const color = element.selected ? gizmo_colors.outline : gizmo_colors.grid;
+            mesh.material.color.set(color);
+            this.dispatchEvent('update_selection', { element });
         }
     });
-    Interface.Panels.outliner.menu.addAction(add_aabb, '3')
-    MenuBar.menus.edit.addAction(add_aabb, '6')
+}
+
+export function registerAABBActions() {
+    //Add AABB
+    let addAction = new Action('add_aabb', {
+        name: 'Add AABB',
+        icon: 'crop_square',
+        category: 'edit',
+        condition: () => Modes.edit,
+        click() {
+            Undo.initEdit({ outliner: true, elements: [], selection: true });
+            let aabb = new AABB().init();
+            let group = getCurrentGroup();
+            aabb.addTo(group);
+
+            if (Format.bone_rig && group) {
+                let pos = group.origin.slice();
+                aabb.extend({ position: pos });
+            }
+
+            unselectAll();
+            aabb.select();
+            Undo.finishEdit('Add AABB', { outliner: true, elements: selected, selection: true });
+            Blockbench.dispatchEvent('add_aabb', { object: aabb });
+            return aabb;
+        }
+    });
+    let add_element_menu = BarItems.add_element.side_menu;
+    add_element_menu.addAction(addAction);
+    deletables.push(addAction);
+
+    //Edit properties dialog
+    let propsAction = new Action('edit_aabb_properties', {
+        name: 'AABB Properties...',
+        icon: 'settings',
+        category: 'edit',
+        condition: () => AABB.selected.length,
+        click() {
+            new Dialog('edit_aabb_properties', {
+                title: 'Edit AABB Properties',
+                form: {
+                    size: {
+                        label: 'Size (Width, Height)',
+                        value: AABB.selected[0]?.size,
+                        type: 'vector',
+                        dimensions: 2,
+                        min: 0.01
+                    }
+                },
+                onConfirm(form) {
+                    Undo.initEdit({ elements: AABB.selected });
+                    AABB.selected.forEach(aabb => {
+                        aabb.size.replace(form.size);
+                        AABB.preview_controller.updateTransform(aabb);
+                        AABB.preview_controller.updateGeometry(aabb);
+                    });
+                    Undo.finishEdit('Change AABB size');
+                }
+            }).show();
+        }
+    });
+    deletables.push(propsAction);
+
+    //Make class globally available if needed
+    window.AABB = AABB;
+}
+
+export function unregisterAABBActions() {
+    deletables.forEach(action => action.delete());
+    deletables.length = 0;
 }
