@@ -5,13 +5,14 @@ import './elements/aabb'
 import './codec/aabb_exporter'
 import './codec/obj_exporter'
 import './codec/amt_animation_exporter'
-import {registerAABB, registerAABBActions, unregisterAABBActions} from "./elements/aabb";
+import {registerAABBActions, unregisterAABBActions} from "./elements/aabb";
 import {registerBullet, unregisterBulletActions} from "./elements/bullet";
 import {exportAnimationAMT} from "./codec/amt_animation_exporter";
 import {exportAABB} from "./codec/aabb_exporter";
 import {ungroup} from "./misc_actions";
 import {exportAMTModel, exportOBJStaticAction, exportOBJDynamicAction, objCodec, objIECodec} from "./codec/obj_exporter";
 import {registerTrack, unregisterTrackActions} from "./elements/track";
+import {registerWire, unregisterWireActions} from "./elements/wire";
 
 
 var iiBarMenu = null;
@@ -27,10 +28,10 @@ const plugin = BBPlugin.register('iitoolkit', {
 	min_version: '4.0.0',
 	variant: 'both',
 	onload() {
-		registerAABB();
 		registerAABBActions();
 		registerBullet();
 		registerTrack();
+		registerWire();
 
 		iiBarMenu = new BarMenu("iitoolkit", [ungroup, exportAnimationAMT, exportAMTModel, exportAABB],{
 			name: 'Immersive Intelligence Toolkit'
@@ -54,6 +55,8 @@ const plugin = BBPlugin.register('iitoolkit', {
 		unregisterAABBActions();
 		unregisterBulletActions();
 		unregisterTrackActions();
+		unregisterWireActions();
+
 		exportAnimationAMT.delete();
 		exportAMTModel.delete();
 		exportAABB.delete();

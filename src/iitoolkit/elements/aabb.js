@@ -73,97 +73,95 @@ export class AABB extends OutlinerElement {
 let deletables = [];
 
 
-export function registerAABB() {
-    //----- AABB Element Class -----
-    //Assign prototype properties
-    AABB.prototype.title = 'AABB';
-    AABB.prototype.type = 'aabb';
-    AABB.prototype.icon = 'fas fa-cube';
-    AABB.prototype.movable = true;
-    AABB.prototype.rotatable = false;
-    AABB.prototype.needsUniqueName = true;
-    AABB.prototype.menu = new Menu([
-        'edit_aabb_properties',
-        '_',
-        ...Outliner.control_menu_group,
-        '_',
-        'rename',
-        'delete'
-    ]);
-    AABB.prototype.buttons = [
-        Outliner.buttons.locked,
-        Outliner.buttons.visibility,
-    ];
+//----- AABB Element Class -----
+//Assign prototype properties
+AABB.prototype.title = 'AABB';
+AABB.prototype.type = 'aabb';
+AABB.prototype.icon = 'fas fa-cube';
+AABB.prototype.movable = true;
+AABB.prototype.rotatable = false;
+AABB.prototype.needsUniqueName = true;
+AABB.prototype.menu = new Menu([
+    'edit_aabb_properties',
+    '_',
+    ...Outliner.control_menu_group,
+    '_',
+    'rename',
+    'delete'
+]);
+AABB.prototype.buttons = [
+    Outliner.buttons.locked,
+    Outliner.buttons.visibility,
+];
 
-    //----- Properties -----
-    new Property(AABB, 'string', 'name', { default: 'aabb' });
-    new Property(AABB, 'vector', 'position');
-    //No rotation property needed, but we keep it for compatibility? Actually we omit rotation.
-    new Property(AABB, 'vector2', 'size', {
-        default: [2, 2], //width (x and z) and height
-        inputs: {
-            element_panel: {
-                input: { label: 'Size', type: 'vector', dimensions: 2 },
-                onChange() {
-                    Canvas.updateView({ elements: AABB.selected, element_aspects: { transform: true } });
-                }
+//----- Properties -----
+new Property(AABB, 'string', 'name', { default: 'aabb' });
+new Property(AABB, 'vector', 'position');
+//No rotation property needed, but we keep it for compatibility? Actually we omit rotation.
+new Property(AABB, 'vector2', 'size', {
+    default: [2, 2], //width (x and z) and height
+    inputs: {
+        element_panel: {
+            input: { label: 'Size', type: 'vector', dimensions: 2 },
+            onChange() {
+                Canvas.updateView({ elements: AABB.selected, element_aspects: { transform: true } });
             }
         }
-    });
-    new Property(AABB, 'boolean', 'visibility', { default: true });
+    }
+});
+new Property(AABB, 'boolean', 'visibility', { default: true });
 
-    OutlinerElement.registerType(AABB, 'aabb');
+OutlinerElement.registerType(AABB, 'aabb');
 
-    //----- Preview Controller -----
-    new NodePreviewController(AABB, {
-        setup(element) {
-            // Create line segments only (no fill)
-            const vertices = getBoxLineVertices(element.size[0], element.size[1]);
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+//----- Preview Controller -----
+new NodePreviewController(AABB, {
+    setup(element) {
+        // Create line segments only (no fill)
+        const vertices = getBoxLineVertices(element.size[0], element.size[1]);
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
 
-            const material = new THREE.LineBasicMaterial({ color: gizmo_colors.grid });
-            const lines = new THREE.LineSegments(geometry, material);
+        const material = new THREE.LineBasicMaterial({ color: gizmo_colors.grid });
+        const lines = new THREE.LineSegments(geometry, material);
 
-            Project.nodes_3d[element.uuid] = lines;
-            lines.name = element.uuid;
-            lines.type = element.type;
-            lines.isElement = true;
-            lines.visible = element.visibility;
+        Project.nodes_3d[element.uuid] = lines;
+        lines.name = element.uuid;
+        lines.type = element.type;
+        lines.isElement = true;
+        lines.visible = element.visibility;
 
-            // No scaling; geometry will be updated on size change
-            this.updateTransform(element);
-            this.dispatchEvent('setup', { element });
-        },
+        // No scaling; geometry will be updated on size change
+        this.updateTransform(element);
+        this.dispatchEvent('setup', { element });
+    },
 
-        updateTransform(element) {
-            // Base method sets position and rotation from properties
-            NodePreviewController.prototype.updateTransform.call(this, element);
-            const mesh = element.mesh;
+    updateTransform(element) {
+        // Base method sets position and rotation from properties
+        NodePreviewController.prototype.updateTransform.call(this, element);
+        const mesh = element.mesh;
 
-            // Force rotation to zero (AABB cannot rotate)
-            mesh.rotation.set(0, 0, 0);
+        // Force rotation to zero (AABB cannot rotate)
+        mesh.rotation.set(0, 0, 0);
 
-            // Regenerate geometry to match current size
-            this.updateGeometry(element);
+        // Regenerate geometry to match current size
+        this.updateGeometry(element);
 
-            this.dispatchEvent('update_transform', { element });
-        },
+        this.dispatchEvent('update_transform', { element });
+    },
 
-        updateGeometry(element) {
-            const vertices = getBoxLineVertices(element.size[0], element.size[1]);
-            element.mesh.geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-            this.dispatchEvent('update_geometry', { element });
-        },
+    updateGeometry(element) {
+        const vertices = getBoxLineVertices(element.size[0], element.size[1]);
+        element.mesh.geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        this.dispatchEvent('update_geometry', { element });
+    },
 
-        updateSelection(element) {
-            const mesh = element.mesh;
-            const color = element.selected ? gizmo_colors.outline : gizmo_colors.grid;
-            mesh.material.color.set(color);
-            this.dispatchEvent('update_selection', { element });
-        }
-    });
-}
+    updateSelection(element) {
+        const mesh = element.mesh;
+        const color = element.selected ? gizmo_colors.outline : gizmo_colors.grid;
+        mesh.material.color.set(color);
+        this.dispatchEvent('update_selection', { element });
+    }
+});
 
 export function registerAABBActions() {
     //Add AABB
