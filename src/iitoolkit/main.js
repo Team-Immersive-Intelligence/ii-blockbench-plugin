@@ -1,4 +1,3 @@
-// import helloWorld from './hello_world'
 import './utils'
 
 import './elements/aabb'
@@ -16,10 +15,10 @@ import {exportAMTModel, exportOBJStaticAction, exportOBJDynamicAction, objCodec,
 
 var iiBarMenu = null;
 
-const plugin = Plugin.register('iitoolkit', {
+const plugin = BBPlugin.register('iitoolkit', {
 	title: 'Immersive Intelligence Toolkit',
 	author: 'Pabilo8',
-	icon: 'icon-format_java',
+	icon: 'icon.png',
 	description: 'Utility plugin for Immersive Intelligence mod models. https://github.com/Pabilo8/ImmersiveIntelligence',
 	about: 'Go to Animation -> Export AMT...',
 	tags: ["Minecraft: Java Edition"],

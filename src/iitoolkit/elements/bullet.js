@@ -287,6 +287,7 @@ new NodePreviewController(Bullet, {
         }
 
         this.updateTransform(element);
+        this.updateGeometry(element);
         this.dispatchEvent('setup', {element});
     },
 
