@@ -11,6 +11,7 @@ import {exportAnimationAMT} from "./codec/amt_animation_exporter";
 import {exportAABB} from "./codec/aabb_exporter";
 import {ungroup} from "./misc_actions";
 import {exportAMTModel, exportOBJStaticAction, exportOBJDynamicAction, objCodec, objIECodec} from "./codec/obj_exporter";
+import {registerTrack, unregisterTrackActions} from "./elements/track";
 
 
 var iiBarMenu = null;
@@ -29,6 +30,7 @@ const plugin = BBPlugin.register('iitoolkit', {
 		registerAABB();
 		registerAABBActions();
 		registerBullet();
+		registerTrack();
 
 		iiBarMenu = new BarMenu("iitoolkit", [ungroup, exportAnimationAMT, exportAMTModel, exportAABB],{
 			name: 'Immersive Intelligence Toolkit'
@@ -51,6 +53,7 @@ const plugin = BBPlugin.register('iitoolkit', {
 	onunload() {
 		unregisterAABBActions();
 		unregisterBulletActions();
+		unregisterTrackActions();
 		exportAnimationAMT.delete();
 		exportAMTModel.delete();
 		exportAABB.delete();
