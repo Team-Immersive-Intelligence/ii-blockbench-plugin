@@ -147,7 +147,7 @@ export var objCodec = new Codec("ii_obj", {
     name: "II Static OBJ",
     support_partial_export: true,
     extension: "obj",
-    remember: true,
+    remember: false,
     export_action: exportOBJStaticAction,
 
     compile(options) {
@@ -179,7 +179,7 @@ export var objIECodec = new Codec("ii_obj_ie", {
     name: "II Dynamic OBJ",
     support_partial_export: true,
     extension: "obj.ie",
-    remember: true,
+    remember: false,
     export_action: exportOBJDynamicAction,
 
     compile(options) {
@@ -224,88 +224,162 @@ export var mtlCodec = new Codec("mtl", {
 function compileModel(options) {
     let compiled = [], textures = [], texture_names = [];
     let exportElements = getExportElements(options);
+    const exportScale = Settings.get('model_export_scale');
+    let indexVertex = 0, indexVertexUvs = 0, indexNormals = 0;
+    const vertex = new THREE.Vector3();
+    const normal = new THREE.Vector3();
+    const uv = new THREE.Vector2();
 
+    // Save and reset scene position (as in obj.js)
+    const oldScenePos = new THREE.Vector3().copy(scene.position);
+    scene.position.set(0, 0, 0);
+
+    // Author and mtl reference
     compiled.push("# " + Settings.get("credit"));
+    compiled.push("# Exported with IIToolkit Plugin on " + new Date().toLocaleDateString());
     compiled.push(`mtllib ${Project.name}.mtl\n`);
 
     Texture.all.forEach(t => {
         textures[t.uuid] = t;
-        texture_names[t.uuid] = t.name.replaceAll(".png", "")
+        texture_names[t.uuid] = t.name.replace(/\.png$/i, '').toLowerCase();
     });
 
-    let vertice_id = 1, face_id = 1;
-    for (let element of exportElements) {
-        //o -> v -> vt -> vn -> usemtl / f
+    // Traverse the scene
+    scene.traverse(mesh => {
+        if (mesh instanceof THREE.Mesh) {
+            let nbVertex = 0;
+            let nbVertexUvs = 0;
+            let nbNormals = 0;
 
-        if (element instanceof Cube) {
-            compiled.push("o " + element.name);
+            const geometry = mesh.geometry;
+            const element = OutlinerNode.uuids[mesh.name];
+            const normalMatrixWorld = new THREE.Matrix3();
+            normalMatrixWorld.getNormalMatrix(mesh.matrixWorld);
 
-        } else if (element instanceof Mesh) {
-            compiled.push("o " + element.name);
-            let verticesMap = Object.keys(element.vertices);
-            let verticesList = element.vertice_list;
-            let facesList = [];
-            element.forAllFaces(f => facesList.push(f));
+            if (!element || !element.faces || element.export === false || !exportElements.includes(element.name))
+                return;
 
-            for (let vert of verticesList) {
-                //Apply scale and offset to the vertex
-                let correctedVert = [
-                    parseFloat(vert[0] * exportOptions.scale + exportOptions.offset[0]),
-                    parseFloat(vert[1] * exportOptions.scale + exportOptions.offset[1]),
-                    parseFloat(vert[2] * exportOptions.scale + exportOptions.offset[2])
-                ]
-                //v vx vy vz
-                compiled.push(`v ${correctedVert[0]} ${correctedVert[1]} ${correctedVert[2]}`)
-            }
+            if (element instanceof Mesh) {
+                // Temporary storage for this mesh
+                const verticesOut = [];
+                const uvsOut = [];
+                const normalsOut = [];
+                const facesOut = [];
 
-            //vt
-            for (let face of facesList) {
-                let width = parseFloat(textures[face.texture].width),
-                    height = parseFloat(textures[face.texture].height);
+                const smoothVertexNormals = element.shading === 'smooth' ? element.calculateNormals() : null;
+                const vertexKeys = [];
+                const vertexNormalMap = new Map(); // for smooth: vkey -> normal index
 
-                for (let vert of face.getSortedVertices()) {
-                    let uv = face.uv[vert].map(n => parseFloat(n));
-                    compiled.push(`vt ${Math.clamp(uv[0] / width, 0, 1)} ${Math.clamp(uv[1] / height, 0, 1)}`);
+                // ---- 1. Collect vertices and smooth normals ----
+                for (let vkey in element.vertices) {
+                    const coords = element.vertices[vkey];
+                    vertex.set(coords[0], coords[1], coords[2]);
+                    vertex.applyMatrix4(mesh.matrixWorld).divideScalar(exportScale);
+                    verticesOut.push(`v ${Math.round(vertex.x * 10000) / 10000} ${Math.round(vertex.y * 10000) / 10000} ${Math.round(vertex.z * 10000) / 10000}`);
+                    nbVertex++;
+                    vertexKeys.push(vkey);
+
+                    if (smoothVertexNormals) {
+                        normal.fromArray(smoothVertexNormals[vkey]);
+                        normal.applyMatrix3(normalMatrixWorld).normalize();
+                        const normStr = `vn ${Math.round(normal.x * 100) / 100} ${Math.round(normal.y * 100) / 100} ${Math.round(normal.z * 100) / 100}`;
+                        vertexNormalMap.set(vkey, normalsOut.length); // store index (0-based)
+                        normalsOut.push(normStr);
+                        nbNormals++;
+                    }
                 }
-            }
 
-            //vn
-            for (let face of facesList) {
-                //Apply scale and offset to the vertex
-                let norm = normalizeVector(face.getNormal());
-                compiled.push(`vn ${norm[0]} ${norm[1]} ${norm[2]}`)
-            }
-
-            let lastMaterial = null;
-            for (let face of facesList) {
-                if (lastMaterial !== face.texture) {
-                    lastMaterial = face.texture;
-                    compiled.push("usemtl " + texture_names[face.texture]);
+                // ---- 2. Collect UVs and (for flat faces) normals, and build face strings ----
+                const faceEntries = [];
+                for (let key in element.faces) {
+                    const face = element.faces[key];
+                    if (face.texture !== null && face.vertices.length >= 3) {
+                        faceEntries.push(face);
+                    }
                 }
-                let faceVertices = (face.getSortedVertices()).map(f => verticesMap.indexOf(f) + vertice_id),
-                    verticeString = "";
 
-                verticeString += `${faceVertices[3]}/${faceVertices[0]}/${face_id} `;
-                verticeString += `${faceVertices[0]}/${faceVertices[1]}/${face_id} `;
-                verticeString += `${faceVertices[1]}/${faceVertices[2]}/${face_id} `;
-                verticeString += `${faceVertices[2]}/${faceVertices[3]}/${face_id}`;
+                let mtlCurrent = null;
+                let faceCounter = 0;
+                for (let face of faceEntries) {
+                    const texture = face.getTexture();
+                    const uvSize = [Project.getUVWidth(texture), Project.getUVHeight(texture)];
+                    const sortedVerts = face.getSortedVertices();
 
-                compiled.push("f " + verticeString);
-                face_id++;
+                    // UVs for this face
+                    const faceUVs = [];
+                    for (let vkey of sortedVerts) {
+                        const u = Math.clamp(face.uv[vkey][0] / uvSize[0], 0, 1);
+                        const v = Math.clamp(1 - face.uv[vkey][1] / uvSize[1], 0, 1);
+                        const uvStr = `vt ${Math.round(u * 10000) / 10000} ${Math.round(v * 10000) / 10000}`;
+                        faceUVs.push(uvStr);
+                        uvsOut.push(uvStr);
+                        nbVertexUvs++;
+                    }
+
+                    // Flat normal if needed (one per face)
+                    let flatNormalIndex = -1;
+                    if (element.shading === 'flat') {
+                        normal.fromArray(face.getNormal(true));
+                        normal.applyMatrix3(normalMatrixWorld).normalize();
+                        const normStr = `vn ${Math.round(normal.x * 100) / 100} ${Math.round(normal.y * 100) / 100} ${Math.round(normal.z * 100) / 100}`;
+                        normalsOut.push(normStr);
+                        flatNormalIndex = normalsOut.length - 1;
+                        nbNormals++;
+                    }
+
+                    const mtlName = texture_names[texture.uuid];
+                    if (mtlName !== mtlCurrent) {
+                        mtlCurrent = mtlName;
+                        facesOut.push(`usemtl ${mtlCurrent}`);
+                    }
+
+                    // Build face indices (using the collected UVs and normals)
+                    let verts = sortedVerts.slice();
+                    if (verts.length === 3) verts.push(verts[0]); // quads expected
+
+                    const triplets = [];
+                    for (let vi = 0; vi < verts.length; vi++) {
+                        const vkey = verts[vi];
+                        const vIdx = vertexKeys.indexOf(vkey) + 1 + indexVertex;
+                        const uvIdx = uvsOut.length - verts.length + vi + 1 + indexVertexUvs;
+                        let nIdx;
+                        if (element.shading === 'smooth') {
+                            nIdx = indexNormals + 1 + vertexNormalMap.get(vkey);
+                        } else {
+                            nIdx = indexNormals + 1 + flatNormalIndex;
+                        }
+                        triplets.push(`${vIdx}/${uvIdx}/${nIdx}`);
+                    }
+                    facesOut.push(`f ${triplets.join(' ')}`);
+                    faceCounter++;
+                }
+
+                // ---- 3. Output in order: o, v, vt, vn, f ----
+                compiled.push(`o ${element.name || 'mesh'}`);
+                compiled.push(...verticesOut);
+                compiled.push(...uvsOut);
+                compiled.push(...normalsOut);
+                compiled.push(...facesOut);
             }
 
-            vertice_id += verticesList.length;
+            // Update global indices
+            indexVertex += nbVertex;
+            indexVertexUvs += nbVertexUvs;
+            indexNormals += nbNormals;
         }
-    }
+    });
 
-    return compiled.join("\n");
+    // Restore scene position
+    scene.position.copy(oldScenePos);
+
+    // Return only the OBJ string (as expected by the old codec)
+    return compiled.join('\n');
 }
 
 function getExportElements(options) {
-    let attachment = options && options.attachment;
-    if (!attachment)
-        return Outliner.elements;
-    return options.attachment.getAllChildren();
+    const attachment = options && options.attachment;
+    const elements = attachment ? attachment.getAllChildren() : Outliner.elements;
+    return [...new Set(elements.map(element => element?.name).filter(Boolean))];
 }
 
 function compileMaterial() {
