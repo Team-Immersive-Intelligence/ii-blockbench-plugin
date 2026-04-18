@@ -31,7 +31,7 @@ export var exportAnimationAMT = new Action('export_animation_amt', {
             form["1_" + key.hashCode()] = {
                 label: " " + key + "",
                 type: 'checkbox',
-                value: exportAnimations.has(key) ? exportAnimations[key] : true,
+                value: "key" in exportAnimations ? exportAnimations[key] : true,
             };
         })
 
