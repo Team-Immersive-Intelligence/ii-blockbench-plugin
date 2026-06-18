@@ -137,6 +137,11 @@ function compileAMT() {
                 if (typeof p.parent == "object")
                     hierarchy[p.name] = p.parent.name;
             }
+            else if (p.type === 'hans' || p.type === 'hans_part') {
+                pos[p.name] = p.type === 'hans' ? (p.position || [0, 0, 0]) : (p.origin || [0, 0, 0]);
+                if (typeof p.parent == "object")
+                    hierarchy[p.name] = p.parent.name;
+            }
         }
     )
 

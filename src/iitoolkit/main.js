@@ -21,6 +21,7 @@ import {registerWire, unregisterWireActions} from "./elements/wire";
 import {registerPipe, unregisterPipeActions} from "./elements/pipe";
 import {registerFluid, unregisterFluidActions} from "./elements/fluid";
 import {registerEmbeddedPart, unregisterEmbeddedPartActions} from "./elements/warehouse";
+import {registerHans, unregisterHansActions} from "./elements/hans";
 
 
 var iiBarMenu = null;
@@ -36,13 +37,16 @@ const plugin = BBPlugin.register('iitoolkit', {
     min_version: '4.0.0',
     variant: 'both',
     onload() {
+        //Cleanuo
+        unregisterAll();
         registerAABBActions();
         registerBullet();
-        registerTrack();
         registerWire();
         registerPipe();
         registerFluid();
         registerEmbeddedPart();
+        registerHans();
+        registerTrack();
 
         iiBarMenu = new BarMenu("iitoolkit", [ungroup, exportAnimationAMT, exportAMTModel, exportAABB], {
             name: 'Immersive Intelligence Toolkit'
@@ -63,19 +67,25 @@ const plugin = BBPlugin.register('iitoolkit', {
         });
     },
     onunload() {
-        unregisterAABBActions();
-        unregisterBulletActions();
-        unregisterTrackActions();
-        unregisterWireActions();
-        unregisterPipeActions();
-        unregisterFluidActions();
-        unregisterEmbeddedPartActions();
-
-        exportAnimationAMT.delete();
-        exportAMTModel.delete();
-        exportAABB.delete();
-        ungroup.delete();
-        exportOBJStaticAction.delete();
-        exportOBJDynamicAction.delete();
+        unregisterAll();
     }
 });
+
+function unregisterAll()
+{
+    unregisterAABBActions();
+    unregisterBulletActions();
+    unregisterWireActions();
+    unregisterPipeActions();
+    unregisterFluidActions();
+    unregisterEmbeddedPartActions();
+    unregisterHansActions();
+    unregisterTrackActions();
+
+    exportAnimationAMT.delete();
+    exportAMTModel.delete();
+    exportAABB.delete();
+    ungroup.delete();
+    exportOBJStaticAction.delete();
+    exportOBJDynamicAction.delete();
+}
