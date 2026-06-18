@@ -1,0 +1,32 @@
+[
+  {
+    "id": "m2",
+    "name": "M2 Machinegun",
+    "description": "The M2 is a vehicle-mounted machinegun, firing 2bCal rounds and designed to fight infantry and unarmored targets.",
+    "author": "Trej",
+    "category": "Weapon",
+    "version": "1.0",
+    "preview": "https://assets.iiteam.net/model/embedded/m2.png",
+    "model": "https://assets.iiteam.net/model/embedded/1bcal_submachinegun.glb"
+  },
+  {
+    "id": "m2v",
+    "name": "M2/V Machinegun",
+    "description": "The M2 is a vehicle hatch mounted variant of the M2 Machinegun.",
+    "author": "Trej",
+    "category": "Weapon",
+    "version": "1.0",
+    "preview": "https://assets.iiteam.net/model/embedded/m2v.png",
+    "model": "https://assets.iiteam.net/model/embedded/2bcal_rifle.glb"
+  },
+  {
+    "id": "m2r",
+    "name": "M2/R Machinegun",
+    "description": "The M2/R is an unmounted variant of the M2 Machinegun.",
+    "author": "Trej",
+    "category": "Weapon",
+    "version": "1.0",
+    "preview": "https://assets.iiteam.net/model/embedded/m2r.png",
+    "model": "https://assets.iiteam.net/model/embedded/2bcal_rifle.glb"
+  }
+]

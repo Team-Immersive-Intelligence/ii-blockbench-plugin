@@ -1,6 +1,20 @@
 import '../GLTFLoader';
+import {
+    collectVisibleMeshes,
+    createPreviewObject3D,
+    getParentSceneObject,
+    makeChildlessCopy,
+    makeSaveCopy,
+    mergeElementProperties,
+    resetElementProperties,
+    safeObjName,
+    setPreviewVisibility,
+    updatePreviewTransform
+} from './common';
 
 const ASSET_BASE = 'https://assets.iiteam.net/model/pipe/';
+const COMMON_PIPE_TEXTURE_NAME = 'common_cable_and_pipe';
+const COMMON_PIPE_TEXTURE_URL = ASSET_BASE + COMMON_PIPE_TEXTURE_NAME + '.png';
 
 let deletables = [];
 let registered = false;
@@ -38,9 +52,7 @@ const capOptions = {
 export class PipeNode extends OutlinerElement {
     constructor(data, uuid) {
         super(data, uuid);
-        for (let key in PipeNode.properties) {
-            PipeNode.properties[key].reset(this);
-        }
+        resetElementProperties(this, PipeNode);
         this.name = 'node';
         this.children = [];
         this.selected = false;
@@ -62,15 +74,7 @@ export class PipeNode extends OutlinerElement {
     }
 
     extend(object) {
-        for (let key in PipeNode.properties) {
-            PipeNode.properties[key].merge(this, object);
-        }
-        Merge.string(this, object, 'name');
-        this.sanitizeName();
-        Merge.boolean(this, object, 'export');
-        Merge.boolean(this, object, 'locked');
-        Merge.boolean(this, object, 'visibility');
-        return this;
+        return mergeElementProperties(this, PipeNode, object);
     }
 
     getPipe() {
@@ -134,45 +138,17 @@ export class PipeNode extends OutlinerElement {
     }
 
     getSaveCopy() {
-        let copy = {
-            isOpen: this.isOpen,
-            uuid: this.uuid,
-            type: this.type,
-            name: this.name,
-            children: this.children.map(c => c.uuid),
-        };
-        for (let key in PipeNode.properties) {
-            PipeNode.properties[key].merge(copy, this);
-        }
-        return copy;
+        return makeSaveCopy(this, PipeNode);
     }
 
     getUndoCopy() {
-        let copy = {
-            isOpen: this.isOpen,
-            uuid: this.uuid,
-            type: this.type,
-            name: this.name,
-            children: this.children.map(c => c.uuid),
-        };
-        for (let key in PipeNode.properties) {
-            PipeNode.properties[key].merge(copy, this);
-        }
-        return copy;
+        return makeSaveCopy(this, PipeNode);
     }
 
     getChildlessCopy(keep_uuid = false) {
-        let base_node = new PipeNode({ name: this.name }, keep_uuid ? this.uuid : null);
-        for (let key in PipeNode.properties) {
-            PipeNode.properties[key].copy(this, base_node);
-        }
-        base_node.name = this.name;
+        const base_node = makeChildlessCopy(this, PipeNode, keep_uuid);
         base_node.origin.V3_set(this.origin);
         base_node.rotation.V3_set(this.rotation);
-        base_node.locked = this.locked;
-        base_node.visibility = this.visibility;
-        base_node.export = this.export;
-        base_node.isOpen = this.isOpen;
         return base_node;
     }
 
@@ -216,56 +192,44 @@ PipeNode.prototype.menu = new Menu(['rename', 'delete']);
 
 OutlinerElement.registerType(PipeNode, 'pipe_node');
 
-new Property(PipeNode, 'vector', 'origin', { default: [0, 0, 0] });
+new Property(PipeNode, 'vector', 'origin', {default: [0, 0, 0]});
 new Property(PipeNode, 'vector', 'rotation');
-new Property(PipeNode, 'boolean', 'visibility', { default: true });
+new Property(PipeNode, 'boolean', 'visibility', {default: true});
 
 new NodePreviewController(PipeNode, {
     setup(element) {
-        let object_3d = new THREE.Object3D();
-        object_3d.rotation.order = 'ZYX';
-        object_3d.uuid = element.uuid.toUpperCase();
-        object_3d.name = element.name;
-        object_3d.isElement = true;
-        object_3d.no_export = true;
-        Project.nodes_3d[element.uuid] = object_3d;
+        const object_3d = createPreviewObject3D(element);
 
         const sphereGeom = new THREE.SphereGeometry(0.2, 8, 8);
-        const sphereMat = new THREE.MeshStandardMaterial({ color: 0xffaa00 });
+        const sphereMat = new THREE.MeshStandardMaterial({color: 0xffaa00});
         const sphere = new THREE.Mesh(sphereGeom, sphereMat);
         object_3d.add(sphere);
 
         this.updateTransform(element);
-        this.dispatchEvent('setup', { element });
+        this.dispatchEvent('setup', {element});
     },
 
     updateTransform(element) {
-        let obj = element.mesh;
-        obj.position.fromArray(element.origin);
-        obj.scale.set(1, 1, 1);
-        obj.rotation.set(0, 0, 0);
-
-        if (element.parent instanceof OutlinerNode) {
-            element.parent.scene_object.add(obj);
-        } else if (obj.parent) {
-            obj.parent.remove(obj);
-        }
-        obj.updateMatrixWorld();
+        updatePreviewTransform(element, {
+            positionKey: 'origin',
+            zeroRotation: true,
+            fallbackToModel: false
+        });
 
         if (element.parent instanceof Pipe) {
             Pipe.preview_controller.updateGeometry(element.parent);
         }
 
-        this.dispatchEvent('update_transform', { element });
+        this.dispatchEvent('update_transform', {element});
     },
 
     updateVisibility(element) {
-        element.mesh.visible = element.visibility;
-        this.dispatchEvent('update_visibility', { element });
+        setPreviewVisibility(element);
+        this.dispatchEvent('update_visibility', {element});
     },
 
     updateSelection(element) {
-        this.dispatchEvent('update_selection', { element });
+        this.dispatchEvent('update_selection', {element});
     }
 });
 
@@ -275,9 +239,7 @@ new NodePreviewController(PipeNode, {
 export class Pipe extends OutlinerElement {
     constructor(data, uuid) {
         super(data, uuid);
-        for (let key in Pipe.properties) {
-            Pipe.properties[key].reset(this);
-        }
+        resetElementProperties(this, Pipe);
         this.name = 'pipe';
         this.children = [];
         this.selected = false;
@@ -296,15 +258,7 @@ export class Pipe extends OutlinerElement {
     }
 
     extend(object) {
-        for (let key in Pipe.properties) {
-            Pipe.properties[key].merge(this, object);
-        }
-        Merge.string(this, object, 'name');
-        this.sanitizeName();
-        Merge.boolean(this, object, 'export');
-        Merge.boolean(this, object, 'locked');
-        Merge.boolean(this, object, 'visibility');
-        return this;
+        return mergeElementProperties(this, Pipe, object);
     }
 
     getMesh() {
@@ -339,44 +293,15 @@ export class Pipe extends OutlinerElement {
     }
 
     getSaveCopy() {
-        let copy = {
-            isOpen: this.isOpen,
-            uuid: this.uuid,
-            type: this.type,
-            name: this.name,
-            children: this.children.map(c => c.uuid),
-        };
-        for (let key in Pipe.properties) {
-            Pipe.properties[key].merge(copy, this);
-        }
-        return copy;
+        return makeSaveCopy(this, Pipe);
     }
 
     getUndoCopy() {
-        let copy = {
-            isOpen: this.isOpen,
-            uuid: this.uuid,
-            type: this.type,
-            name: this.name,
-            children: this.children.map(c => c.uuid),
-        };
-        for (let key in Pipe.properties) {
-            Pipe.properties[key].merge(copy, this);
-        }
-        return copy;
+        return makeSaveCopy(this, Pipe);
     }
 
     getChildlessCopy(keep_uuid = false) {
-        let base_pipe = new Pipe({ name: this.name }, keep_uuid ? this.uuid : null);
-        for (let key in Pipe.properties) {
-            Pipe.properties[key].copy(this, base_pipe);
-        }
-        base_pipe.name = this.name;
-        base_pipe.locked = this.locked;
-        base_pipe.visibility = this.visibility;
-        base_pipe.export = this.export;
-        base_pipe.isOpen = this.isOpen;
-        return base_pipe;
+        return makeChildlessCopy(this, Pipe, keep_uuid);
     }
 
     forEachChild(cb, type, forSelf) {
@@ -421,6 +346,7 @@ Pipe.prototype.buttons = [
 ];
 Pipe.prototype.menu = new Menu([
     'add_pipe_node',
+    'convert_pipe_to_mesh',
     ...Outliner.control_menu_group,
     new MenuSeparator('settings'),
     new MenuSeparator('manage'),
@@ -430,10 +356,10 @@ Pipe.prototype.menu = new Menu([
 
 OutlinerElement.registerType(Pipe, 'pipe');
 
-new Property(Pipe, 'string', 'name', { default: 'pipe' });
+new Property(Pipe, 'string', 'name', {default: 'pipe'});
 new Property(Pipe, 'vector', 'position');
 new Property(Pipe, 'vector', 'rotation');
-new Property(Pipe, 'vector', 'scale', { default: [1, 1, 1] });
+new Property(Pipe, 'vector', 'scale', {default: [1, 1, 1]});
 new Property(Pipe, 'string', 'pipeType', {
     default: Object.keys(pipeTypes)[0],
     inputs: {
@@ -479,7 +405,7 @@ new Property(Pipe, 'string', 'endCap', {
         }
     }
 });
-new Property(Pipe, 'boolean', 'visibility', { default: true });
+new Property(Pipe, 'boolean', 'visibility', {default: true});
 
 // ----------------------------------------------------------------------
 // Model loading and part extraction
@@ -549,7 +475,7 @@ function getPipeDimensions(straightPart, cornerPart) {
         const bbox = new THREE.Box3().setFromObject(cornerPart);
         cornerSize = Math.max(bbox.max.x - bbox.min.x, bbox.max.y - bbox.min.y, bbox.max.z - bbox.min.z) / 2;
     }
-    return { straightLength, cornerSize };
+    return {straightLength, cornerSize};
 }
 
 function quatFromUpToDir(dir) {
@@ -590,8 +516,14 @@ function cutStraightMesh(sourceMesh, targetLength) {
     for (let i = 0; i < vertexCount; i++) {
         const y = positions[i * 3 + 1];
         const v = uvs[i * 2 + 1];
-        if (y < minY) { minY = y; bottomV = v; }
-        if (y > maxY) { maxY = y; topV = v; }
+        if (y < minY) {
+            minY = y;
+            bottomV = v;
+        }
+        if (y > maxY) {
+            maxY = y;
+            topV = v;
+        }
     }
 
     const cutRatio = targetLength / fullLength;
@@ -623,47 +555,30 @@ function cutStraightMesh(sourceMesh, targetLength) {
 // ----------------------------------------------------------------------
 new NodePreviewController(Pipe, {
     async setup(element) {
-        let object_3d = new THREE.Object3D();
-        object_3d.rotation.order = 'ZYX';
-        object_3d.uuid = element.uuid.toUpperCase();
-        object_3d.name = element.name;
-        object_3d.isElement = true;
-        object_3d.no_export = true;
-        Project.nodes_3d[element.uuid] = object_3d;
+        const object_3d = createPreviewObject3D(element);
 
         this.updateTransform(element);
         await this.updateGeometry(element);
 
-        this.dispatchEvent('setup', { element });
+        this.dispatchEvent('setup', {element});
     },
 
     updateTransform(element) {
-        let obj = element.mesh;
-        obj.position.fromArray(element.position);
-        obj.rotation.setFromDegreeArray(element.rotation);
-        obj.scale.fromArray(element.scale);
-
-        if (element.parent instanceof OutlinerNode) {
-            element.parent.scene_object.add(obj);
-        } else if (obj.parent !== Project.model_3d) {
-            Project.model_3d.add(obj);
-        }
-
-        obj.updateMatrixWorld();
+        updatePreviewTransform(element);
         this.updateGeometry(element);
-        this.dispatchEvent('update_transform', { element });
+        this.dispatchEvent('update_transform', {element});
     },
 
     async updateGeometry(element) {
         const group = element.mesh;
-        let pipeContainer = group.getObjectByName('pipe_assembly');
-        if (pipeContainer) group.remove(pipeContainer);
-        pipeContainer = new THREE.Group();
-        pipeContainer.name = 'pipe_assembly';
-        group.add(pipeContainer);
+        const updateToken = element._pipeGeometryUpdateToken = (element._pipeGeometryUpdateToken || 0) + 1;
 
         const nodes = element.getAllNodes().filter(n => n.visibility);
-        if (nodes.length < 2) return;
+        if (nodes.length < 2) {
+            const oldContainer = group.getObjectByName('pipe_assembly');
+            if (oldContainer) group.remove(oldContainer);
+            return;
+        }
 
         let model;
         try {
@@ -672,6 +587,14 @@ new NodePreviewController(Pipe, {
             console.warn(`Failed to load pipe model "${element.pipeType}":`, e);
             return;
         }
+        if (updateToken !== element._pipeGeometryUpdateToken) return;
+
+        let pipeContainer = group.getObjectByName('pipe_assembly');
+        if (pipeContainer) group.remove(pipeContainer);
+        pipeContainer = new THREE.Group();
+        pipeContainer.name = 'pipe_assembly';
+        group.add(pipeContainer);
+
         const parts = extractParts(model);
         if (!parts.straight || !parts.corner) {
             console.warn('Pipe model missing required "straight" or "corner" groups');
@@ -680,7 +603,7 @@ new NodePreviewController(Pipe, {
 
         // Straight part is 16px tall (Y axis). Corner size equals diameter.
         const STRAIGHT_FULL_LENGTH = 16;
-        const { cornerSize } = getPipeDimensions(parts.straight, parts.corner);
+        const {cornerSize} = getPipeDimensions(parts.straight, parts.corner);
 
         const points = nodes.map(n => n.mesh.position.clone());
 
@@ -731,8 +654,8 @@ new NodePreviewController(Pipe, {
         function addCap(pos, dirOut, capType) {
             let capPart = null;
             if (capType === 'endpoint') capPart = parts.endpoint;
-            else if (capType === '3_way') capPart = parts.junction_3;
-            else if (capType === '4_way') capPart = parts.junction_4;
+            else if (capType === '3way' || capType === '3_way') capPart = parts.junction_3;
+            else if (capType === '4way' || capType === '4_way') capPart = parts.junction_4;
             if (!capPart) return;
 
             const instance = capPart.clone(true);
@@ -743,7 +666,7 @@ new NodePreviewController(Pipe, {
 
         for (let i = 0; i < points.length - 1; i++) {
             const start = points[i];
-            const end = points[i+1];
+            const end = points[i + 1];
             const dir = new THREE.Vector3().subVectors(end, start);
             const totalLen = dir.length();
             const normDir = dir.clone().normalize();
@@ -776,28 +699,201 @@ new NodePreviewController(Pipe, {
         }
 
         for (let i = 1; i < points.length - 1; i++) {
-            const prevDir = new THREE.Vector3().subVectors(points[i], points[i-1]).normalize();
-            const nextDir = new THREE.Vector3().subVectors(points[i+1], points[i]).normalize();
+            const prevDir = new THREE.Vector3().subVectors(points[i], points[i - 1]).normalize();
+            const nextDir = new THREE.Vector3().subVectors(points[i + 1], points[i]).normalize();
             addCorner(points[i], prevDir, nextDir);
         }
 
-        this.dispatchEvent('update_geometry', { element });
+        this.dispatchEvent('update_geometry', {element});
     },
 
     updateVisibility(element) {
-        element.mesh.visible = element.visibility;
-        this.dispatchEvent('update_visibility', { element });
+        setPreviewVisibility(element);
+        this.dispatchEvent('update_visibility', {element});
     },
 
     updateSelection(element) {
-        this.dispatchEvent('update_selection', { element });
+        this.dispatchEvent('update_selection', {element});
     }
 });
+
+
+// ----------------------------------------------------------------------
+// Pipe conversion helpers
+// ----------------------------------------------------------------------
+function getMatrixInverse(matrix) {
+    const inverse = new THREE.Matrix4();
+    if (typeof inverse.copy(matrix).invert === 'function') {
+        inverse.copy(matrix).invert();
+    } else {
+        inverse.getInverse(matrix);
+    }
+    return inverse;
+}
+
+function roundCoord(value) {
+    return Math.round(value * 10000) / 10000;
+}
+
+function readIndexArray(geometry) {
+    if (geometry.index && geometry.index.array) {
+        return Array.from(geometry.index.array);
+    }
+    const count = geometry.attributes.position?.count || 0;
+    return Array.from({length: count}, (_, index) => index);
+}
+
+function normaliseTextureName(value) {
+    return String(value || '').replace(/\.png$/i, '').toLowerCase();
+}
+
+function findCommonPipeTexture() {
+    return Texture.all.find(texture => {
+        const name = normaliseTextureName(texture.name);
+        const path = String(texture.path || texture.source || '').toLowerCase();
+        return name === COMMON_PIPE_TEXTURE_NAME || path.endsWith('/' + COMMON_PIPE_TEXTURE_NAME + '.png');
+    });
+}
+
+async function getOrCreateCommonPipeTexture() {
+    let texture = findCommonPipeTexture();
+    if (texture)
+        return texture;
+
+    let blob = await fetch(COMMON_PIPE_TEXTURE_URL)
+        .then(r => r.blob());
+    let dataUrl = await new Promise(resolve => {
+        let reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.readAsDataURL(blob);
+    });
+
+    texture = new Texture({
+        name: COMMON_PIPE_TEXTURE_NAME
+    });
+    texture.fromDataURL(dataUrl)
+
+    if (typeof texture.add === 'function')
+        texture.add(false);
+    if (typeof texture.load === 'function')
+        texture.load();
+
+    console.log("Created" + texture.uuid)
+    return texture;
+}
+
+function getTextureUvSize(texture) {
+    return [
+        typeof texture?.getUVWidth === 'function' ? texture.getUVWidth() : (Project.texture_width || 16),
+        typeof texture?.getUVHeight === 'function' ? texture.getUVHeight() : (Project.texture_height || 16)
+    ];
+}
+
+async function collectPipeMeshData(pipe) {
+    if (!pipe.mesh) return null;
+
+    pipe.mesh.updateMatrixWorld(true);
+    const sourceMeshes = collectVisibleMeshes(pipe.mesh.getObjectByName('pipe_assembly'));
+    if (!sourceMeshes.length) return null;
+
+    const parentObject = getParentSceneObject(pipe);
+    parentObject.updateMatrixWorld(true);
+    const parentInverse = getMatrixInverse(parentObject.matrixWorld);
+
+    const vertices = {};
+    const faces = {};
+    let vertexIndex = 0;
+    let faceIndex = 0;
+
+    const vertex = new THREE.Vector3();
+    const uv = new THREE.Vector2();
+    let commonPipeTexture = null;
+    return await getOrCreateCommonPipeTexture().then((texture) => {
+        commonPipeTexture = texture;
+        console.log("Found: " + commonPipeTexture?.uuid);
+
+        const commonPipeTextureUuid = commonPipeTexture?.uuid;
+        const uvSize = getTextureUvSize(commonPipeTexture);
+
+        sourceMeshes.forEach(sourceMesh => {
+            const geometry = sourceMesh.geometry;
+            const positionAttr = geometry.attributes.position;
+            const uvAttr = geometry.attributes.uv;
+            if (!positionAttr) return;
+
+            const indices = readIndexArray(geometry);
+            for (let i = 0; i + 2 < indices.length; i += 3) {
+                const faceVertices = [];
+                const faceUvs = {};
+
+                [indices[i], indices[i + 1], indices[i + 2]].forEach(sourceIndex => {
+                    const key = `v${vertexIndex++}`;
+                    vertex.fromBufferAttribute(positionAttr, sourceIndex);
+                    sourceMesh.localToWorld(vertex);
+                    vertex.applyMatrix4(parentInverse);
+
+                    vertices[key] = [roundCoord(vertex.x), roundCoord(vertex.y), roundCoord(vertex.z)];
+                    faceVertices.push(key);
+
+                    if (uvAttr) {
+                        uv.fromBufferAttribute(uvAttr, sourceIndex);
+                        faceUvs[key] = [roundCoord(uv.x * uvSize[0]), roundCoord(uv.y * uvSize[1])];
+                    } else {
+                        faceUvs[key] = [0, 0];
+                    }
+                });
+
+                faces[`f${faceIndex++}`] = {
+                    vertices: faceVertices,
+                    uv: faceUvs,
+                    texture: commonPipeTextureUuid
+                };
+                console.log(commonPipeTextureUuid);
+            }
+        });
+
+        return Object.keys(vertices).length ? {vertices, faces} : null;
+    });
+}
+
+function createBlockbenchMeshFromPipe(pipe, meshData) {
+    const mesh = new Mesh({
+        name: `${safeObjName(pipe.name, 'pipe')}_mesh`,
+        origin: [0, 0, 0],
+        rotation: [0, 0, 0],
+        vertices: meshData.vertices,
+        faces: meshData.faces
+    });
+
+    // Feed faces through MeshFace when available. Some Blockbench builds accept plain save data,
+    // but this keeps the result closer to native Mesh instances.
+    if (typeof MeshFace !== 'undefined') {
+        mesh.faces = {};
+        for (let key in meshData.faces) {
+            mesh.faces[key] = new MeshFace(mesh, meshData.faces[key]);
+        }
+    }
+
+    mesh.init();
+    mesh.addTo(pipe.parent instanceof OutlinerNode ? pipe.parent : undefined);
+    mesh.createUniqueName();
+    console.log(`Created mesh with ${Object.keys(meshData.vertices).length} vertices and ${Object.keys(meshData.faces).length} faces`);
+    return mesh;
+}
+
+async function convertPipeToMesh(pipe) {
+    await Pipe.preview_controller.updateGeometry(pipe);
+    return await collectPipeMeshData(pipe).then(meshData => {
+        if (!meshData)
+            return null;
+        return createBlockbenchMeshFromPipe(pipe, meshData);
+    });
+}
 
 // ----------------------------------------------------------------------
 // Actions
 // ----------------------------------------------------------------------
-let addPipeAction, addPipeNodeAction;
+let addPipeAction, addPipeNodeAction, convertPipeToMeshAction;
 
 function createActions() {
     addPipeAction = new Action('add_pipe', {
@@ -806,15 +902,15 @@ function createActions() {
         category: 'edit',
         condition: () => Modes.edit,
         click() {
-            Undo.initEdit({ outliner: true, elements: [], selection: true });
+            Undo.initEdit({outliner: true, elements: [], selection: true});
             let pipe = new Pipe().init();
             let group = getCurrentGroup();
             pipe.addTo(group);
             pipe.createUniqueName();
             unselectAll();
             pipe.select();
-            Undo.finishEdit('Add Pipe', { outliner: true, elements: selected, selection: true });
-            Blockbench.dispatchEvent('add_pipe', { object: pipe });
+            Undo.finishEdit('Add Pipe', {outliner: true, elements: selected, selection: true});
+            Blockbench.dispatchEvent('add_pipe', {object: pipe});
             return pipe;
         }
     });
@@ -826,26 +922,57 @@ function createActions() {
         condition: () => Modes.edit && Pipe.hasSelected(),
         click() {
             const pipe = Pipe.selected[0];
-            Undo.initEdit({ outliner: true, elements: [], selection: true });
+            Undo.initEdit({outliner: true, elements: [], selection: true});
             let node = new PipeNode().init();
             node.addTo(pipe);
             const nodes = pipe.getAllNodes();
             if (nodes.length === 0) {
                 node.origin = [0, 0, 0];
             } else {
-                const last = nodes[nodes.length-1];
+                const last = nodes[nodes.length - 1];
                 node.origin = [last.origin[0] + 2, last.origin[1], last.origin[2]];
             }
             node.createUniqueName();
             unselectAll();
             node.select();
-            Undo.finishEdit('Add Pipe Node', { outliner: true, elements: selected, selection: true });
-            Blockbench.dispatchEvent('add_pipe_node', { object: node });
+            Undo.finishEdit('Add Pipe Node', {outliner: true, elements: selected, selection: true});
+            Blockbench.dispatchEvent('add_pipe_node', {object: node});
             return node;
         }
     });
 
-    deletables.push(addPipeAction, addPipeNodeAction);
+
+    convertPipeToMeshAction = new Action('convert_pipe_to_mesh', {
+        name: 'Convert Pipe to Mesh',
+        icon: 'polyline',
+        category: 'edit',
+        condition: () => Modes.edit && Pipe.hasSelected(),
+        async click() {
+            const pipes = Pipe.selected.slice();
+            const converted = [];
+
+            Undo.initEdit({outliner: true, elements: pipes, selection: true});
+            for (let pipe of pipes) {
+                const mesh = await convertPipeToMesh(pipe);
+                if (mesh) {
+                    converted.push(mesh);
+                    pipe.remove();
+                }
+            }
+
+            if (converted.length) {
+                unselectAll();
+                converted.forEach(mesh => mesh.select());
+                Canvas.updateAll();
+                Undo.finishEdit('Convert Pipe to Mesh', {outliner: true, elements: converted, selection: true});
+                Blockbench.showQuickMessage(`Converted ${converted.length} pipe${converted.length === 1 ? '' : 's'} to Mesh`);
+            } else {
+                Undo.cancelEdit();
+                Blockbench.showQuickMessage('Pipe geometry is not ready to convert', 'error');
+            }
+        }
+    });
+    deletables.push(addPipeAction, addPipeNodeAction, convertPipeToMeshAction);
 }
 
 // ----------------------------------------------------------------------

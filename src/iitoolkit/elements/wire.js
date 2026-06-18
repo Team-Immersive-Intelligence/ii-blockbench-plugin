@@ -216,8 +216,10 @@ new NodePreviewController(WireNode, {
         let object_3d = new THREE.Object3D();
         object_3d.rotation.order = 'ZYX';
         object_3d.uuid = element.uuid.toUpperCase();
-        object_3d.name = element.name;
+        object_3d.name = element.uuid;
+        object_3d.type = element.type;
         object_3d.isElement = true;
+        object_3d.visible = element.visibility;
         object_3d.no_export = true;
         Project.nodes_3d[element.uuid] = object_3d;
 
@@ -571,8 +573,10 @@ new NodePreviewController(Wire, {
         let object_3d = new THREE.Object3D();
         object_3d.rotation.order = 'ZYX';
         object_3d.uuid = element.uuid.toUpperCase();
-        object_3d.name = element.name;
+        object_3d.name = element.uuid;
+        object_3d.type = element.type;
         object_3d.isElement = true;
+        object_3d.visible = element.visibility;
         object_3d.no_export = true;
         Project.nodes_3d[element.uuid] = object_3d;
 

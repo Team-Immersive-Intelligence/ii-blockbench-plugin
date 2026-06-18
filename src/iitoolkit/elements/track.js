@@ -1,28 +1,141 @@
 import '../GLTFLoader';
 
 const ASSET_BASE = 'https://assets.iiteam.net/model/track/';
+const EPSILON = 1e-6;
+const TWO_PI = Math.PI * 2;
+const MAX_ARC_STEP = Math.PI / 12;
+const MAX_CONTACT_ARC = Math.PI + 1e-4;
 
 let deletables = [];
 let registered = false;
 
 const modelCache = new Map();
+const segmentLengthCache = new Map();
 const segmentFileMap = {
-    "motor_belt_cloth.glb": "Cloth Motor Belt",
-    "motor_belt_rubber.glb": "Rubber Motor Belt",
-    "tracks_heavy_14.glb": "Heavy Tracks (14px)",
-    "tracks_light_8.glb": "Light Tracks (8px)"
+    'motor_belt_cloth.glb': 'Cloth Motor Belt',
+    'motor_belt_rubber.glb': 'Rubber Motor Belt',
+    'tracks_heavy_14.glb': 'Heavy Tracks (14px)',
+    'tracks_light_8.glb': 'Light Tracks (8px)'
 };
 
 // ----------------------------------------------------------------------
-// TrackNode – defines a path node with position and rotation.
+// Shared custom-element helpers
 // ----------------------------------------------------------------------
-export class TrackNode extends OutlinerElement {
+function resetProperties(element, type) {
+    for (const key in type.properties) {
+        type.properties[key].reset(element);
+    }
+}
+
+function mergeProperties(element, type, object) {
+    for (const key in type.properties) {
+        type.properties[key].merge(element, object);
+    }
+    Merge.string(element, object, 'name');
+    element.sanitizeName();
+    Merge.boolean(element, object, 'export');
+    Merge.boolean(element, object, 'locked');
+    Merge.boolean(element, object, 'visibility');
+    return element;
+}
+
+function makeSaveCopy(element, type) {
+    const copy = {
+        isOpen: element.isOpen,
+        uuid: element.uuid,
+        type: element.type,
+        name: element.name,
+        children: element.children.map(child => child.uuid),
+    };
+    for (const key in type.properties) {
+        type.properties[key].merge(copy, element);
+    }
+    return copy;
+}
+
+function makeChildlessCopy(element, type, keepUuid = false) {
+    const copy = new type({name: element.name}, keepUuid ? element.uuid : null);
+    for (const key in type.properties) {
+        type.properties[key].copy(element, copy);
+    }
+    copy.name = element.name;
+    copy.locked = element.locked;
+    copy.visibility = element.visibility;
+    copy.export = element.export;
+    copy.isOpen = element.isOpen;
+    return copy;
+}
+
+function createPreviewObject(element) {
+    const object = new THREE.Object3D();
+    object.rotation.order = 'ZYX';
+    object.uuid = element.uuid.toUpperCase();
+    object.name = element.uuid;
+    object.type = element.type;
+    object.isElement = true;
+    object.visible = element.visibility;
+    object.no_export = true;
+    Project.nodes_3d[element.uuid] = object;
+    return object;
+}
+
+function attachPreviewObject(element, rootFallback = true) {
+    const object = element.mesh;
+    if (!object) return;
+
+    if (element.parent instanceof OutlinerNode) {
+        const parentObject = element.parent.scene_object || element.parent.mesh;
+        if (parentObject && object.parent !== parentObject) parentObject.add(object);
+    } else if (rootFallback && object.parent !== Project.model_3d) {
+        Project.model_3d.add(object);
+    } else if (!rootFallback && object.parent) {
+        object.parent.remove(object);
+    }
+    object.updateMatrixWorld();
+}
+
+function forEachChild(element, callback, type, forSelf) {
+    if (forSelf) callback(element);
+    for (const child of element.children) {
+        if (!type || (Array.isArray(type) ? type.some(candidate => child instanceof candidate) : child instanceof type)) {
+            callback(child);
+        }
+        if (child.forEachChild) child.forEachChild(callback, type);
+    }
+}
+
+function selectAnimatorFor(element) {
+    if (!Animator.open || !Animation.selected || !element.constructor.animator) return;
+    Animation.selected.getBoneAnimator(element)?.select(true);
+}
+
+function clamp01(value) {
+    return Math.clamp(Number(value) || 0, 0, 1);
+}
+
+function disposeObjectChildren(object, disposeResources = true) {
+    if (!object) return;
+    while (object.children.length) {
+        const child = object.children[object.children.length - 1];
+        object.remove(child);
+        if (!disposeResources) continue;
+        child.traverse(node => {
+            if (node.geometry?.dispose) node.geometry.dispose();
+            if (Array.isArray(node.material)) node.material.forEach(material => material?.dispose?.());
+            else node.material?.dispose?.();
+        });
+    }
+}
+
+// ----------------------------------------------------------------------
+// TrackLink – legacy TrackNode, now explicitly the path-link node.
+// The serialized type remains track_node for backwards compatibility.
+// ----------------------------------------------------------------------
+export class TrackLink extends OutlinerElement {
     constructor(data, uuid) {
         super(data, uuid);
-        for (let key in TrackNode.properties) {
-            TrackNode.properties[key].reset(this);
-        }
-        this.name = 'node';
+        resetProperties(this, TrackLink);
+        this.name = 'link';
         this.children = [];
         this.selected = false;
         this.locked = false;
@@ -31,11 +144,8 @@ export class TrackNode extends OutlinerElement {
         this.isOpen = false;
         this.visibility = true;
 
-        if (typeof data === 'object') {
-            this.extend(data);
-        } else if (typeof data === 'string') {
-            this.name = data;
-        }
+        if (typeof data === 'object') this.extend(data);
+        else if (typeof data === 'string') this.name = data;
     }
 
     get position() {
@@ -43,48 +153,25 @@ export class TrackNode extends OutlinerElement {
     }
 
     extend(object) {
-        for (let key in TrackNode.properties) {
-            TrackNode.properties[key].merge(this, object);
-        }
-        Merge.string(this, object, 'name');
-        this.sanitizeName();
-        Merge.boolean(this, object, 'export');
-        Merge.boolean(this, object, 'locked');
-        Merge.boolean(this, object, 'visibility');
-        return this;
+        return mergeProperties(this, TrackLink, object);
     }
 
     getTrack() {
         let parent = this.parent;
-        while (parent instanceof Track === false && parent instanceof OutlinerNode) {
-            parent = parent.parent;
-        }
+        while (!(parent instanceof Track) && parent instanceof OutlinerNode) parent = parent.parent;
         return parent instanceof Track ? parent : null;
     }
 
     init() {
         super.init();
-        if (!this.mesh || !this.mesh.parent) {
-            TrackNode.preview_controller.setup(this);
-        }
-        return this;
-    }
-
-    select(event, isOutlinerClick) {
-        let result = super.select(event, isOutlinerClick);
-        if (result == false) return false;
-        if (Animator.open && Animation.selected) {
-            Animation.selected.getBoneAnimator(this)?.select(true);
-        }
+        if (!this.mesh || !this.mesh.parent) TrackLink.preview_controller.setup(this);
         return this;
     }
 
     markAsSelected(descendants) {
         Outliner.selected.safePush(this);
         this.selected = true;
-        if (descendants) {
-            this.children.forEach(child => child.markAsSelected(true));
-        }
+        if (descendants) this.children.forEach(child => child.markAsSelected(true));
         TickUpdates.selection = true;
         return this;
     }
@@ -92,9 +179,7 @@ export class TrackNode extends OutlinerElement {
     openUp() {
         this.isOpen = true;
         this.updateElement();
-        if (this.parent && this.parent !== 'root') {
-            this.parent.openUp();
-        }
+        if (this.parent && this.parent !== 'root') this.parent.openUp();
         return this;
     }
 
@@ -103,72 +188,34 @@ export class TrackNode extends OutlinerElement {
     }
 
     flip(axis, center) {
-        let offset = this.position[axis] - center;
+        const offset = this.position[axis] - center;
         this.position[axis] = center - offset;
-        this.rotation.forEach((n, i) => {
-            if (i != axis) this.rotation[i] = -n;
+        this.rotation.forEach((value, index) => {
+            if (index !== axis) this.rotation[index] = -value;
         });
         flipNameOnAxis(this, axis);
         this.createUniqueName();
-        TrackNode.preview_controller.updateTransform(this);
+        TrackLink.preview_controller.updateTransform(this);
         return this;
     }
 
     getSaveCopy() {
-        let copy = {
-            isOpen: this.isOpen,
-            uuid: this.uuid,
-            type: this.type,
-            name: this.name,
-            children: this.children.map(c => c.uuid),
-        };
-        for (let key in TrackNode.properties) {
-            TrackNode.properties[key].merge(copy, this);
-        }
-        return copy;
+        return makeSaveCopy(this, TrackLink);
     }
 
     getUndoCopy() {
-        let copy = {
-            isOpen: this.isOpen,
-            uuid: this.uuid,
-            type: this.type,
-            name: this.name,
-            children: this.children.map(c => c.uuid),
-        };
-        for (let key in TrackNode.properties) {
-            TrackNode.properties[key].merge(copy, this);
-        }
+        return makeSaveCopy(this, TrackLink);
+    }
+
+    getChildlessCopy(keepUuid = false) {
+        const copy = makeChildlessCopy(this, TrackLink, keepUuid);
+        copy.origin.V3_set(this.origin);
+        copy.rotation.V3_set(this.rotation);
         return copy;
     }
 
-    getChildlessCopy(keep_uuid = false) {
-        let base_node = new TrackNode({name: this.name}, keep_uuid ? this.uuid : null);
-        for (let key in TrackNode.properties) {
-            TrackNode.properties[key].copy(this, base_node);
-        }
-        base_node.name = this.name;
-        base_node.origin.V3_set(this.origin);
-        base_node.rotation.V3_set(this.rotation);
-        base_node.locked = this.locked;
-        base_node.visibility = this.visibility;
-        base_node.export = this.export;
-        base_node.isOpen = this.isOpen;
-        return base_node;
-    }
-
-    forEachChild(cb, type, forSelf) {
-        let i = 0;
-        if (forSelf) cb(this);
-        while (i < this.children.length) {
-            if (!type || (type instanceof Array ? type.find(t2 => this.children[i] instanceof t2) : this.children[i] instanceof type)) {
-                cb(this.children[i]);
-            }
-            if (this.children[i].forEachChild) {
-                this.children[i].forEachChild(cb, type);
-            }
-            i++;
-        }
+    forEachChild(callback, type, forSelf) {
+        forEachChild(this, callback, type, forSelf);
     }
 
     static behavior = {
@@ -186,78 +233,366 @@ export class TrackNode extends OutlinerElement {
     static preview_controller;
 }
 
-TrackNode.prototype.title = 'Track Node';
-TrackNode.prototype.type = 'track_node';
-TrackNode.prototype.icon = 'link';
-TrackNode.prototype.buttons = [
-    Outliner.buttons.locked,
-    Outliner.buttons.visibility,
-];
-TrackNode.prototype.menu = new Menu([
-    'rename',
-    'delete'
-]);
+TrackLink.prototype.title = 'Track Link';
+TrackLink.prototype.type = 'track_node';
+TrackLink.prototype.icon = 'timeline';
+TrackLink.prototype.buttons = [Outliner.buttons.locked, Outliner.buttons.visibility];
+TrackLink.prototype.menu = new Menu(['rename', 'delete']);
 
-OutlinerElement.registerType(TrackNode, 'track_node');
+OutlinerElement.registerType(TrackLink, 'track_node');
 
-new Property(TrackNode, 'vector', 'origin', {default: [0, 0, 0]});
-new Property(TrackNode, 'vector', 'rotation');
-new Property(TrackNode, 'boolean', 'visibility', {default: true});
+new Property(TrackLink, 'vector', 'origin', {default: [0, 0, 0]});
+new Property(TrackLink, 'vector', 'rotation');
+new Property(TrackLink, 'boolean', 'visibility', {default: true});
 
-new NodePreviewController(TrackNode, {
+
+function getTrackAxisSign(track) {
+    return track?.axisDirection === 'negative' ? -1 : 1;
+}
+
+function getTrackForwardVector(track) {
+    const sign = getTrackAxisSign(track);
+    return track?.trackDirection === 'x'
+        ? new THREE.Vector3(sign, 0, 0)
+        : new THREE.Vector3(0, 0, sign);
+}
+
+function rebuildTrackLinkVisual(element) {
+    const object = element.mesh;
+    if (!object) return;
+
+    let visual = object.getObjectByName('track_link_visual');
+    if (!visual) {
+        visual = new THREE.Group();
+        visual.name = 'track_link_visual';
+        object.add(visual);
+    }
+
+    const track = element.getTrack();
+    const direction = track?.trackDirection || 'z';
+    const axisDirection = track?.axisDirection || 'positive';
+    const geometryKey = `${direction}:${axisDirection}`;
+    if (visual.userData.geometryKey !== geometryKey) {
+        disposeObjectChildren(visual);
+
+        const sphere = new THREE.Mesh(
+            new THREE.SphereGeometry(0.3, 8, 8),
+            new THREE.MeshStandardMaterial({
+                color: 0x44aaff,
+                emissive: new THREE.Color(0x224466),
+                emissiveIntensity: 0.5
+            })
+        );
+        visual.add(sphere);
+
+        const forward = getTrackForwardVector(track);
+        const arrow = new THREE.Mesh(
+            new THREE.ConeGeometry(0.2, 0.8, 8),
+            new THREE.MeshStandardMaterial({color: 0xffaa00})
+        );
+        arrow.position.copy(forward).multiplyScalar(0.6);
+        arrow.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), forward);
+        visual.add(arrow);
+        visual.userData.geometryKey = geometryKey;
+    }
+    visual.visible = track?.showDebugMarkers !== false;
+}
+
+new NodePreviewController(TrackLink, {
     setup(element) {
-        let object_3d = new THREE.Object3D();
-        object_3d.rotation.order = 'ZYX';
-        object_3d.uuid = element.uuid.toUpperCase();
-        object_3d.name = element.name;
-        object_3d.isElement = true;
-        object_3d.no_export = true;
-        Project.nodes_3d[element.uuid] = object_3d;
-
-        // Visual representation: sphere at origin, arrow pointing forward (+Z)
-        const sphereGeom = new THREE.SphereGeometry(0.3, 8, 8);
-        const sphereMat = new THREE.MeshStandardMaterial({
-            color: 0x44aaff,
-            emissive: new THREE.Color(0x224466),
-            emissiveIntensity: 0.5
-        });
-        const sphere = new THREE.Mesh(sphereGeom, sphereMat);
-        object_3d.add(sphere);
-
-        const arrowGeom = new THREE.ConeGeometry(0.2, 0.8, 8);
-        const arrowMat = new THREE.MeshStandardMaterial({color: 0xffaa00});
-        const arrow = new THREE.Mesh(arrowGeom, arrowMat);
-        arrow.position.z = 0.6;
-        arrow.rotation.x = Math.PI / 2;
-        object_3d.add(arrow);
-
+        createPreviewObject(element);
+        rebuildTrackLinkVisual(element);
         this.updateTransform(element);
         this.dispatchEvent('setup', {element});
     },
 
     updateTransform(element) {
-        let obj = element.mesh;
-        obj.rotation.order = Format.euler_order;
-        obj.rotation.setFromDegreeArray(element.rotation);
-        obj.position.fromArray(element.origin);
-        obj.scale.set(1, 1, 1);
+        const object = element.mesh;
+        object.rotation.order = Format.euler_order;
+        object.rotation.setFromDegreeArray(element.rotation);
+        object.position.fromArray(element.origin);
+        object.scale.set(1, 1, 1);
+        attachPreviewObject(element, false);
+        rebuildTrackLinkVisual(element);
 
-        if (element.parent instanceof OutlinerNode) {
-            element.parent.scene_object.add(obj);
-        } else if (obj.parent) {
-            obj.parent.remove(obj);
-        }
-        obj.updateMatrixWorld();
-
-        if (element.parent instanceof Track) {
-            Track.preview_controller.updateGeometry(element.parent);
-        }
-
+        const track = element.getTrack();
+        if (track) Track.preview_controller.updateGeometry(track);
         this.dispatchEvent('update_transform', {element});
     },
 
     updateVisibility(element) {
         element.mesh.visible = element.visibility;
+        const track = element.getTrack();
+        if (track) Track.preview_controller.updateGeometry(track);
+        this.dispatchEvent('update_visibility', {element});
+    },
+
+    updateSelection(element) {
+        this.dispatchEvent('update_selection', {element});
+    }
+});
+
+// Legacy import name retained for the rest of IIToolkit and older integrations.
+export const TrackNode = TrackLink;
+
+// ----------------------------------------------------------------------
+// TrackSuspender – a suspension constraint that owns one wheel.
+// Fixed suspension visuals are children of this node; the wheel subtree
+// alone is translated by compression.
+// ----------------------------------------------------------------------
+export class TrackSuspender extends OutlinerElement {
+    constructor(data, uuid) {
+        super(data, uuid);
+        resetProperties(this, TrackSuspender);
+        this.name = 'suspender';
+        this.children = [];
+        this.selected = false;
+        this.locked = false;
+        this.export = true;
+        this.parent = 'root';
+        this.isOpen = false;
+        this.visibility = true;
+
+        if (typeof data === 'object') this.extend(data);
+        else if (typeof data === 'string') this.name = data;
+    }
+
+    get position() {
+        return this.origin;
+    }
+
+    extend(object) {
+        return mergeProperties(this, TrackSuspender, object);
+    }
+
+    getTrack() {
+        let parent = this.parent;
+        while (!(parent instanceof Track) && parent instanceof OutlinerNode) parent = parent.parent;
+        return parent instanceof Track ? parent : null;
+    }
+
+    getWheel() {
+        return this.children.find(child => child instanceof TrackWheel) || null;
+    }
+
+    getCompressionOffset() {
+        return Math.max(0, Number(this.maxCompression) || 0) * clamp01(this.compression);
+    }
+
+    getCompressedWheelOrigin() {
+        const wheel = this.getWheel();
+        const wheelOrigin = wheel?.origin || [0, 0, 0];
+        return [
+            this.origin[0] + wheelOrigin[0],
+            this.origin[1] + wheelOrigin[1] + this.getCompressionOffset(),
+            this.origin[2] + wheelOrigin[2]
+        ];
+    }
+
+    init() {
+        super.init();
+        if (!this.mesh || !this.mesh.parent) TrackSuspender.preview_controller.setup(this);
+        return this;
+    }
+
+    select(event, isOutlinerClick) {
+        const result = super.select(event, isOutlinerClick);
+        if (result === false) return false;
+        selectAnimatorFor(this);
+        return this;
+    }
+
+    markAsSelected(descendants) {
+        Outliner.selected.safePush(this);
+        this.selected = true;
+        if (descendants) this.children.forEach(child => child.markAsSelected(true));
+        TickUpdates.selection = true;
+        return this;
+    }
+
+    openUp() {
+        this.isOpen = true;
+        this.updateElement();
+        if (this.parent && this.parent !== 'root') this.parent.openUp();
+        return this;
+    }
+
+    getWorldCenter() {
+        return THREE.fastWorldPosition(this.mesh, new THREE.Vector3());
+    }
+
+    flip(axis, center) {
+        const offset = this.position[axis] - center;
+        this.position[axis] = center - offset;
+        flipNameOnAxis(this, axis);
+        this.createUniqueName();
+        TrackSuspender.preview_controller.updateTransform(this);
+        return this;
+    }
+
+    getSaveCopy() {
+        return makeSaveCopy(this, TrackSuspender);
+    }
+
+    getUndoCopy() {
+        return makeSaveCopy(this, TrackSuspender);
+    }
+
+    getChildlessCopy(keepUuid = false) {
+        const copy = makeChildlessCopy(this, TrackSuspender, keepUuid);
+        copy.origin.V3_set(this.origin);
+        return copy;
+    }
+
+    forEachChild(callback, type, forSelf) {
+        forEachChild(this, callback, type, forSelf);
+    }
+
+    static behavior = {
+        unique_name: false,
+        parent: true,
+        movable: true,
+        rotatable: false,
+        resizable: false,
+        child_types: ['track_wheel', 'mesh', 'embedded_part'],
+        parent_types: ['track'],
+        select_children: 'self_first',
+        hide_in_screenshot: false,
+    };
+
+    static preview_controller;
+}
+
+TrackSuspender.prototype.title = 'Track Suspender';
+TrackSuspender.prototype.type = 'track_suspender';
+TrackSuspender.prototype.icon = 'vertical_align_center';
+TrackSuspender.prototype.buttons = [Outliner.buttons.locked, Outliner.buttons.visibility];
+TrackSuspender.prototype.menu = new Menu([
+    'add_track_wheel',
+    'add_track_visual_mesh',
+    'import_embedded_part',
+    ...Outliner.control_menu_group,
+    new MenuSeparator('manage'),
+    'rename',
+    'delete'
+]);
+
+OutlinerElement.registerType(TrackSuspender, 'track_suspender');
+
+new Property(TrackSuspender, 'vector', 'origin', {default: [0, 0, 0]});
+new Property(TrackSuspender, 'number', 'maxCompression', {
+    default: 0,
+    min: 0,
+    step: 0.1,
+    inputs: {
+        element_panel: {
+            input: {label: 'Maximum Compression', type: 'number', min: 0, step: 0.1},
+            onChange() {
+                TrackSuspender.selected.forEach(element => TrackSuspender.preview_controller.updateGeometry(element));
+            }
+        }
+    }
+});
+new Property(TrackSuspender, 'number', 'compression', {
+    default: 0,
+    min: 0,
+    max: 1,
+    step: 0.01,
+    inputs: {
+        element_panel: {
+            input: {label: 'Compression', type: 'num_slider', min: 0, max: 1, step: 0.01},
+            onChange() {
+                TrackSuspender.selected.forEach(element => {
+                    element.compression = clamp01(element.compression);
+                    keyframeScalarProperty(element, 'compression', element.compression);
+                    TrackSuspender.preview_controller.updateGeometry(element);
+                });
+            }
+        }
+    }
+});
+new Property(TrackSuspender, 'boolean', 'visibility', {default: true});
+
+function rebuildSuspenderVisual(element) {
+    const object = element.mesh;
+    if (!object) return;
+
+    let visual = object.getObjectByName('track_suspender_debug');
+    if (!visual) {
+        visual = new THREE.Group();
+        visual.name = 'track_suspender_debug';
+        object.add(visual);
+    }
+
+    const maxCompression = Math.max(0, Number(element.maxCompression) || 0);
+    const geometryKey = String(maxCompression);
+    if (visual.userData.geometryKey !== geometryKey) {
+        disposeObjectChildren(visual);
+
+        const marker = new THREE.Mesh(
+            new THREE.OctahedronGeometry(0.28, 0),
+            new THREE.MeshStandardMaterial({
+                color: 0x66dd88,
+                emissive: new THREE.Color(0x163b24),
+                emissiveIntensity: 0.45
+            })
+        );
+        visual.add(marker);
+
+        if (maxCompression > EPSILON) {
+            const guide = new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(0, 0, 0),
+                    new THREE.Vector3(0, maxCompression, 0)
+                ]),
+                new THREE.LineBasicMaterial({color: 0x66dd88, transparent: true, opacity: 0.7})
+            );
+            visual.add(guide);
+        }
+        visual.userData.geometryKey = geometryKey;
+    }
+    visual.visible = element.getTrack()?.showDebugMarkers !== false;
+}
+
+function updateSuspenderWheelTransform(element) {
+    const wheel = element.getWheel();
+    if (wheel) applyWheelPreviewTransform(wheel);
+}
+
+new NodePreviewController(TrackSuspender, {
+    setup(element) {
+        createPreviewObject(element);
+        this.updateTransform(element);
+        this.updateGeometry(element);
+        this.dispatchEvent('setup', {element});
+    },
+
+    updateTransform(element) {
+        const object = element.mesh;
+        object.rotation.set(0, 0, 0);
+        object.position.fromArray(element.origin);
+        object.scale.set(1, 1, 1);
+        attachPreviewObject(element, false);
+        rebuildSuspenderVisual(element);
+        updateSuspenderWheelTransform(element);
+
+        const track = element.getTrack();
+        if (track) Track.preview_controller.updateGeometry(track);
+        this.dispatchEvent('update_transform', {element});
+    },
+
+    updateGeometry(element) {
+        rebuildSuspenderVisual(element);
+        updateSuspenderWheelTransform(element);
+        const track = element.getTrack();
+        if (track) Track.preview_controller.updateGeometry(track);
+        this.dispatchEvent('update_geometry', {element});
+    },
+
+    updateVisibility(element) {
+        element.mesh.visible = element.visibility;
+        const track = element.getTrack();
+        if (track) Track.preview_controller.updateGeometry(track);
         this.dispatchEvent('update_visibility', {element});
     },
 
@@ -267,14 +602,315 @@ new NodePreviewController(TrackNode, {
 });
 
 // ----------------------------------------------------------------------
-// Track – contains TrackNodes and draws repeating segment models.
+// TrackWheel – wheel radius and rotating visual subtree.
+// ----------------------------------------------------------------------
+export class TrackWheel extends OutlinerElement {
+    constructor(data, uuid) {
+        super(data, uuid);
+        resetProperties(this, TrackWheel);
+        this.name = 'wheel';
+        this.children = [];
+        this.selected = false;
+        this.locked = false;
+        this.export = true;
+        this.parent = 'root';
+        this.isOpen = false;
+        this.visibility = true;
+
+        if (typeof data === 'object') this.extend(data);
+        else if (typeof data === 'string') this.name = data;
+    }
+
+    get position() {
+        return this.origin;
+    }
+
+    extend(object) {
+        return mergeProperties(this, TrackWheel, object);
+    }
+
+    getSuspender() {
+        return this.parent instanceof TrackSuspender ? this.parent : null;
+    }
+
+    getTrack() {
+        let parent = this.parent;
+        while (!(parent instanceof Track) && parent instanceof OutlinerNode) parent = parent.parent;
+        return parent instanceof Track ? parent : null;
+    }
+
+    // Compatibility for wheel nodes authored by the previous IIToolkit build.
+    getLegacyCompressionOffset() {
+        return Math.max(0, Number(this.maxCompression) || 0) * clamp01(this.compression);
+    }
+
+    getEffectiveOrigin() {
+        const suspender = this.getSuspender();
+        if (suspender) return suspender.getCompressedWheelOrigin();
+        return [this.origin[0], this.origin[1] + this.getLegacyCompressionOffset(), this.origin[2]];
+    }
+
+    addTo(target) {
+        if (target instanceof TrackSuspender) {
+            const existing = target.getWheel();
+            if (existing && existing !== this) {
+                Blockbench.showQuickMessage('A Track Suspender can contain only one wheel', 'error');
+                return this;
+            }
+        }
+        return super.addTo(target);
+    }
+
+    init() {
+        super.init();
+        if (!this.mesh || !this.mesh.parent) TrackWheel.preview_controller.setup(this);
+        return this;
+    }
+
+    select(event, isOutlinerClick) {
+        const result = super.select(event, isOutlinerClick);
+        if (result === false) return false;
+        selectAnimatorFor(this);
+        return this;
+    }
+
+    markAsSelected(descendants) {
+        Outliner.selected.safePush(this);
+        this.selected = true;
+        if (descendants) this.children.forEach(child => child.markAsSelected(true));
+        TickUpdates.selection = true;
+        return this;
+    }
+
+    openUp() {
+        this.isOpen = true;
+        this.updateElement();
+        if (this.parent && this.parent !== 'root') this.parent.openUp();
+        return this;
+    }
+
+    getWorldCenter() {
+        return THREE.fastWorldPosition(this.mesh, new THREE.Vector3());
+    }
+
+    getSaveCopy() {
+        return makeSaveCopy(this, TrackWheel);
+    }
+
+    getUndoCopy() {
+        return makeSaveCopy(this, TrackWheel);
+    }
+
+    getChildlessCopy(keepUuid = false) {
+        const copy = makeChildlessCopy(this, TrackWheel, keepUuid);
+        copy.origin.V3_set(this.origin);
+        return copy;
+    }
+
+    forEachChild(callback, type, forSelf) {
+        forEachChild(this, callback, type, forSelf);
+    }
+
+    static behavior = {
+        unique_name: false,
+        parent: true,
+        movable: true,
+        rotatable: false,
+        resizable: false,
+        child_types: ['mesh', 'embedded_part'],
+        // Wheels may either be fixed constraints directly below a Track or
+        // suspended constraints below a TrackSuspender.
+        parent_types: ['track_suspender', 'track'],
+        select_children: 'self_first',
+        hide_in_screenshot: false,
+    };
+
+    static preview_controller;
+}
+
+TrackWheel.prototype.title = 'Track Wheel';
+TrackWheel.prototype.type = 'track_wheel';
+TrackWheel.prototype.icon = 'radio_button_unchecked';
+TrackWheel.prototype.buttons = [Outliner.buttons.locked, Outliner.buttons.visibility];
+TrackWheel.prototype.menu = new Menu([
+    'add_track_visual_mesh',
+    'import_embedded_part',
+    ...Outliner.control_menu_group,
+    new MenuSeparator('manage'),
+    'rename',
+    'delete'
+]);
+
+OutlinerElement.registerType(TrackWheel, 'track_wheel');
+
+new Property(TrackWheel, 'vector', 'origin', {default: [0, 0, 0]});
+new Property(TrackWheel, 'number', 'radius', {
+    default: 2,
+    min: 0.01,
+    step: 0.1,
+    inputs: {
+        element_panel: {
+            input: {label: 'Radius', type: 'number', min: 0.01, step: 0.1},
+            onChange() {
+                TrackWheel.selected.forEach(element => TrackWheel.preview_controller.updateGeometry(element));
+            }
+        }
+    }
+});
+new Property(TrackWheel, 'number', 'wheelRotation', {
+    default: 0,
+    step: 1,
+    inputs: {
+        element_panel: {
+            input: {label: 'Rotation', type: 'number', step: 1},
+            onChange() {
+                TrackWheel.selected.forEach(element => {
+                    keyframeScalarProperty(element, 'rotation', element.wheelRotation);
+                    applyWheelRotation(element);
+                });
+            }
+        }
+    }
+});
+// Retain the old serialised fields silently so earlier wheel nodes still load.
+new Property(TrackWheel, 'number', 'maxCompression', {default: 0, min: 0});
+new Property(TrackWheel, 'number', 'compression', {default: 0, min: 0, max: 1});
+new Property(TrackWheel, 'boolean', 'visibility', {default: true});
+
+function getWheelRotationRadians(element) {
+    const track = element.getTrack();
+    const sign = getTrackAxisSign(track);
+    const radians = (Number(element.wheelRotation) || 0) * Math.PI / 180;
+    return track?.trackDirection === 'x' ? sign * radians : -sign * radians;
+}
+
+function applyWheelRotation(element) {
+    const object = element.mesh;
+    if (!object) return;
+    object.rotation.set(0, 0, 0);
+    const wheelAngle = getWheelRotationRadians(element);
+    if (element.getTrack()?.trackDirection === 'x') object.rotation.z = wheelAngle;
+    else object.rotation.x = wheelAngle;
+    object.updateMatrixWorld();
+}
+
+function applyWheelPreviewTransform(element) {
+    const object = element.mesh;
+    if (!object) return;
+    const suspender = element.getSuspender();
+    const compressionOffset = suspender ? suspender.getCompressionOffset() : element.getLegacyCompressionOffset();
+    object.position.set(element.origin[0], element.origin[1] + compressionOffset, element.origin[2]);
+    object.scale.set(1, 1, 1);
+    applyWheelRotation(element);
+    attachPreviewObject(element, false);
+    rebuildWheelVisual(element);
+}
+
+function rebuildWheelVisual(element) {
+    const object = element.mesh;
+    if (!object) return;
+
+    let visual = object.getObjectByName('track_wheel_debug');
+    if (!visual) {
+        visual = new THREE.Group();
+        visual.name = 'track_wheel_debug';
+        object.add(visual);
+    }
+
+    const track = element.getTrack();
+    const direction = track?.trackDirection || 'z';
+    const radius = Math.max(0.01, Number(element.radius) || 0.01);
+    const geometryKey = `${radius}:${direction}`;
+
+    if (visual.userData.geometryKey !== geometryKey) {
+        disposeObjectChildren(visual);
+
+        const tyreMaterial = new THREE.MeshStandardMaterial({
+            color: 0x556270,
+            emissive: new THREE.Color(0x17212b),
+            emissiveIntensity: 0.35,
+            roughness: 0.9,
+            metalness: 0.05
+        });
+        const hubMaterial = new THREE.MeshStandardMaterial({
+            color: 0xc99a3d,
+            emissive: new THREE.Color(0x4a3512),
+            emissiveIntensity: 0.25,
+            roughness: 0.65,
+            metalness: 0.25
+        });
+
+        const ring = new THREE.Mesh(
+            new THREE.TorusGeometry(radius, Math.max(0.06, Math.min(0.18, radius * 0.06)), 8, 32),
+            tyreMaterial
+        );
+        if (direction === 'z') ring.rotation.y = Math.PI / 2;
+        visual.add(ring);
+
+        const hub = new THREE.Mesh(
+            new THREE.CylinderGeometry(Math.max(0.08, radius * 0.12), Math.max(0.08, radius * 0.12), 0.18, 12),
+            hubMaterial
+        );
+        if (direction === 'x') hub.rotation.x = Math.PI / 2;
+        else hub.rotation.z = Math.PI / 2;
+        visual.add(hub);
+
+        const spokeLength = Math.max(0.01, radius * 1.55);
+        for (let index = 0; index < 4; index++) {
+            const spoke = new THREE.Mesh(
+                new THREE.BoxGeometry(spokeLength, Math.max(0.035, radius * 0.025), Math.max(0.035, radius * 0.025)),
+                hubMaterial.clone()
+            );
+            spoke.rotation.z = index * Math.PI / 4;
+            if (direction === 'z') spoke.rotation.y = Math.PI / 2;
+            visual.add(spoke);
+        }
+        visual.userData.geometryKey = geometryKey;
+    }
+    visual.visible = track?.showDebugMarkers !== false;
+}
+
+new NodePreviewController(TrackWheel, {
+    setup(element) {
+        createPreviewObject(element);
+        this.updateTransform(element);
+        this.updateGeometry(element);
+        this.dispatchEvent('setup', {element});
+    },
+
+    updateTransform(element) {
+        applyWheelPreviewTransform(element);
+        const track = element.getTrack();
+        if (track) Track.preview_controller.updateGeometry(track);
+        this.dispatchEvent('update_transform', {element});
+    },
+
+    updateGeometry(element) {
+        rebuildWheelVisual(element);
+        const track = element.getTrack();
+        if (track) Track.preview_controller.updateGeometry(track);
+        this.dispatchEvent('update_geometry', {element});
+    },
+
+    updateVisibility(element) {
+        element.mesh.visible = element.visibility;
+        const track = element.getTrack();
+        if (track) Track.preview_controller.updateGeometry(track);
+        this.dispatchEvent('update_visibility', {element});
+    },
+
+    updateSelection(element) {
+        this.dispatchEvent('update_selection', {element});
+    }
+});
+
+// ----------------------------------------------------------------------
+// Track – contains TrackLinks and TrackSuspenders and draws repeating segments.
 // ----------------------------------------------------------------------
 export class Track extends OutlinerElement {
     constructor(data, uuid) {
         super(data, uuid);
-        for (let key in Track.properties) {
-            Track.properties[key].reset(this);
-        }
+        resetProperties(this, Track);
         this.name = 'track';
         this.children = [];
         this.selected = false;
@@ -284,25 +920,13 @@ export class Track extends OutlinerElement {
         this.isOpen = false;
         this.visibility = true;
         this.origin = [0, 0, 0];
-        this.progress = 0;  // 0 to 1
 
-        if (typeof data === 'object') {
-            this.extend(data);
-        } else if (typeof data === 'string') {
-            this.name = data;
-        }
+        if (typeof data === 'object') this.extend(data);
+        else if (typeof data === 'string') this.name = data;
     }
 
     extend(object) {
-        for (let key in Track.properties) {
-            Track.properties[key].merge(this, object);
-        }
-        Merge.string(this, object, 'name');
-        this.sanitizeName();
-        Merge.boolean(this, object, 'export');
-        Merge.boolean(this, object, 'locked');
-        Merge.boolean(this, object, 'visibility');
-        return this;
+        return mergeProperties(this, Track, object);
     }
 
     getMesh() {
@@ -311,18 +935,21 @@ export class Track extends OutlinerElement {
 
     init() {
         super.init();
-        if (!this.mesh || !this.mesh.parent) {
-            Track.preview_controller.setup(this);
-        }
+        if (!this.mesh || !this.mesh.parent) Track.preview_controller.setup(this);
+        return this;
+    }
+
+    select(event, isOutlinerClick) {
+        const result = super.select(event, isOutlinerClick);
+        if (result === false) return false;
+        selectAnimatorFor(this);
         return this;
     }
 
     markAsSelected(descendants) {
         Outliner.selected.safePush(this);
         this.selected = true;
-        if (descendants) {
-            this.children.forEach(child => child.markAsSelected(true));
-        }
+        if (descendants) this.children.forEach(child => child.markAsSelected(true));
         TickUpdates.selection = true;
         return this;
     }
@@ -330,73 +957,43 @@ export class Track extends OutlinerElement {
     openUp() {
         this.isOpen = true;
         this.updateElement();
-        if (this.parent && this.parent !== 'root') {
-            this.parent.openUp();
-        }
+        if (this.parent && this.parent !== 'root') this.parent.openUp();
         return this;
     }
 
     getSaveCopy() {
-        let copy = {
-            isOpen: this.isOpen,
-            uuid: this.uuid,
-            type: this.type,
-            name: this.name,
-            children: this.children.map(c => c.uuid),
-        };
-        for (let key in Track.properties) {
-            Track.properties[key].merge(copy, this);
-        }
-        return copy;
+        return makeSaveCopy(this, Track);
     }
 
     getUndoCopy() {
-        let copy = {
-            isOpen: this.isOpen,
-            uuid: this.uuid,
-            type: this.type,
-            name: this.name,
-            children: this.children.map(c => c.uuid),
-        };
-        for (let key in Track.properties) {
-            Track.properties[key].merge(copy, this);
-        }
-        return copy;
+        return makeSaveCopy(this, Track);
     }
 
-    getChildlessCopy(keep_uuid = false) {
-        let base_track = new Track({name: this.name}, keep_uuid ? this.uuid : null);
-        for (let key in Track.properties) {
-            Track.properties[key].copy(this, base_track);
-        }
-        base_track.name = this.name;
-        base_track.locked = this.locked;
-        base_track.visibility = this.visibility;
-        base_track.export = this.export;
-        base_track.isOpen = this.isOpen;
-        return base_track;
+    getChildlessCopy(keepUuid = false) {
+        return makeChildlessCopy(this, Track, keepUuid);
     }
 
-    forEachChild(cb, type, forSelf) {
-        let i = 0;
-        if (forSelf) cb(this);
-        while (i < this.children.length) {
-            if (!type || (type instanceof Array ? type.find(t2 => this.children[i] instanceof t2) : this.children[i] instanceof type)) {
-                cb(this.children[i]);
+    forEachChild(callback, type, forSelf) {
+        forEachChild(this, callback, type, forSelf);
+    }
+
+    getPathNodes() {
+        // Only direct Track children define the closed path. A Suspender
+        // contributes its child Wheel as one compressed constraint, while a
+        // direct Wheel contributes itself as a fixed wheel constraint.
+        return this.children.filter(child => {
+            if (!child.visibility) return false;
+            if (child instanceof TrackLink) return true;
+            if (child instanceof TrackSuspender) {
+                const wheel = child.getWheel();
+                return !!wheel && wheel.visibility;
             }
-            if (this.children[i].forEachChild) {
-                this.children[i].forEachChild(cb, type);
-            }
-            i++;
-        }
+            return child instanceof TrackWheel;
+        });
     }
 
     getAllNodes() {
-        let nodes = [];
-        this.forEachChild(child => {
-            if (child instanceof TrackNode) nodes.push(child);
-        });
-        return nodes;
+        return this.getPathNodes();
     }
 
     static behavior = {
@@ -404,7 +1001,7 @@ export class Track extends OutlinerElement {
         movable: true,
         rotatable: true,
         parent: true,
-        child_types: ['track_node'],
+        child_types: ['track_node', 'track_suspender', 'track_wheel'],
     };
 
     static preview_controller;
@@ -413,12 +1010,11 @@ export class Track extends OutlinerElement {
 Track.prototype.title = 'Track';
 Track.prototype.type = 'track';
 Track.prototype.icon = 'orthopedics';
-Track.prototype.buttons = [
-    Outliner.buttons.locked,
-    Outliner.buttons.visibility,
-];
+Track.prototype.buttons = [Outliner.buttons.locked, Outliner.buttons.visibility];
 Track.prototype.menu = new Menu([
     'add_track_node',
+    'add_track_wheel',
+    'add_track_suspender',
     ...Outliner.control_menu_group,
     new MenuSeparator('settings'),
     new MenuSeparator('manage'),
@@ -436,13 +1032,9 @@ new Property(Track, 'string', 'segmentModel', {
     default: Object.keys(segmentFileMap)[0],
     inputs: {
         element_panel: {
-            input: {
-                label: 'Segment Model',
-                type: 'select',
-                options: segmentFileMap
-            },
+            input: {label: 'Segment Model', type: 'select', options: segmentFileMap},
             onChange() {
-                Track.selected.forEach(el => Track.preview_controller.updateGeometry(el));
+                Track.selected.forEach(element => Track.preview_controller.updateGeometry(element, true));
             }
         }
     }
@@ -457,7 +1049,28 @@ new Property(Track, 'string', 'trackDirection', {
                 options: {'x': 'X Axis', 'z': 'Z Axis'}
             },
             onChange() {
-                Track.selected.forEach(el => Track.preview_controller.updateGeometry(el));
+                Track.selected.forEach(element => {
+                    refreshTrackChildPreviews(element);
+                    Track.preview_controller.updateGeometry(element, true);
+                });
+            }
+        }
+    }
+});
+new Property(Track, 'string', 'axisDirection', {
+    default: 'positive',
+    inputs: {
+        element_panel: {
+            input: {
+                label: 'Forward Direction',
+                type: 'select',
+                options: {'positive': 'Positive Axis', 'negative': 'Negative Axis'}
+            },
+            onChange() {
+                Track.selected.forEach(element => {
+                    refreshTrackChildPreviews(element);
+                    Track.preview_controller.updateGeometry(element, true);
+                });
             }
         }
     }
@@ -469,261 +1082,636 @@ new Property(Track, 'number', 'progress', {
     step: 0.01,
     inputs: {
         element_panel: {
-            input: {
-                label: 'Progress',
-                type: 'num_slider',
-                min: 0.0,
-                max: 1.0,
-                step: 0.01
-            },
+            input: {label: 'Progress', type: 'num_slider', min: 0, max: 1, step: 0.01},
             onChange() {
-                Track.selected.forEach(el => Track.preview_controller.updateGeometry(el));
+                Track.selected.forEach(element => {
+                    element.progress = clamp01(element.progress);
+                    keyframeScalarProperty(element, 'progress', element.progress);
+                    Track.preview_controller.updateGeometry(element);
+                });
+            }
+        }
+    }
+});
+new Property(Track, 'boolean', 'showDebugMarkers', {
+    default: true,
+    inputs: {
+        element_panel: {
+            input: {label: 'Show Debug Markers', type: 'checkbox'},
+            onChange() {
+                Track.selected.forEach(element => refreshTrackDebugMarkers(element));
             }
         }
     }
 });
 new Property(Track, 'boolean', 'visibility', {default: true});
 
-// ----------------------------------------------------------------------
-// Model loading and helpers
-// ----------------------------------------------------------------------
-async function loadSegmentModel(filename) {
-    if (modelCache.has(filename)) {
-        return modelCache.get(filename).clone();
-    }
-    const url = ASSET_BASE + filename;
-    return new Promise((resolve, reject) => {
-        new THREE.GLTFLoader().load(url,
-            (gltf) => {
-                const model = gltf.scene;
-                model.traverse(node => {
-                    if (node.isMesh && node.material) {
-                        node.receiveShadow = true;
-                        const materials = Array.isArray(node.material) ? node.material : [node.material];
-                        materials.forEach(mat => {
-                            mat.roughness = 1.0;
-                            mat.metalness = 0.0;
-                            mat.emissive = new THREE.Color(0x7f7f7f);
-                            mat.emissiveIntensity = 0.125 * 3;
-                        });
-                    }
-                });
-                modelCache.set(filename, model.clone(true));
-                resolve(model);
-            },
-            undefined,
-            reject
-        );
+function refreshTrackDebugMarkers(track) {
+    track.forEachChild(child => {
+        if (child instanceof TrackLink) rebuildTrackLinkVisual(child);
+        else if (child instanceof TrackSuspender) rebuildSuspenderVisual(child);
+        else if (child instanceof TrackWheel) rebuildWheelVisual(child);
     });
 }
 
-function getSegmentLength(model) {
-    let minX = Infinity, maxX = -Infinity;
-    model.traverse(node => {
-        if (node.isMesh) {
-            const bbox = new THREE.Box3().setFromObject(node);
-            if (!bbox.isEmpty()) {
-                minX = Math.min(minX, bbox.min.x);
-                maxX = Math.max(maxX, bbox.max.x);
-            }
+function refreshTrackChildPreviews(track) {
+    track.forEachChild(child => {
+        if (child instanceof TrackLink) rebuildTrackLinkVisual(child);
+        else if (child instanceof TrackSuspender) {
+            rebuildSuspenderVisual(child);
+            updateSuspenderWheelTransform(child);
+        } else if (child instanceof TrackWheel) {
+            TrackWheel.preview_controller.updateTransform(child);
         }
     });
-    return maxX - minX;
-}
-
-function getSortedNodes(track) {
-    return track.getAllNodes()
-        .filter(n => n.visibility)
-        .sort((a, b) => {
-            const numA = parseInt(a.name.match(/\d+$/)?.[0] || '0');
-            const numB = parseInt(b.name.match(/\d+$/)?.[0] || '0');
-            return numA - numB;
-        });
 }
 
 // ----------------------------------------------------------------------
-// Track Preview Controller
+// Model loading
+// ----------------------------------------------------------------------
+async function loadSegmentModel(filename) {
+    if (!modelCache.has(filename)) {
+        modelCache.set(filename, new Promise((resolve, reject) => {
+            new THREE.GLTFLoader().load(
+                ASSET_BASE + filename,
+                gltf => {
+                    const model = gltf.scene;
+                    model.traverse(node => {
+                        if (!node.isMesh || !node.material) return;
+                        node.receiveShadow = true;
+                        node.castShadow = true;
+                        const materials = Array.isArray(node.material) ? node.material : [node.material];
+                        materials.forEach(material => {
+                            material.roughness = 1;
+                            material.metalness = 0;
+                            material.emissive = new THREE.Color(0x7f7f7f);
+                            material.emissiveIntensity = 0.375;
+                        });
+                    });
+                    resolve(model);
+                },
+                undefined,
+                reject
+            );
+        }));
+    }
+    return modelCache.get(filename);
+}
+
+function getSegmentLength(filename, model) {
+    if (segmentLengthCache.has(filename)) return segmentLengthCache.get(filename);
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    model.updateMatrixWorld(true);
+    model.traverse(node => {
+        if (!node.isMesh) return;
+        const box = new THREE.Box3().setFromObject(node);
+        if (!box.isEmpty()) {
+            minX = Math.min(minX, box.min.x);
+            maxX = Math.max(maxX, box.max.x);
+        }
+    });
+    const length = maxX - minX;
+    segmentLengthCache.set(filename, length);
+    return length;
+}
+
+// ----------------------------------------------------------------------
+// Wheel-aware path construction
+// ----------------------------------------------------------------------
+function getPlaneNode(element, direction) {
+    let origin = element.origin;
+    let radius = 0;
+
+    if (element instanceof TrackSuspender) {
+        const wheel = element.getWheel();
+        origin = element.getCompressedWheelOrigin();
+        radius = wheel ? Math.max(0.01, Number(wheel.radius) || 0.01) : 0;
+    } else if (element instanceof TrackWheel) {
+        // Direct wheels are fixed constraints; legacy compression fields remain
+        // honoured for backwards-compatible project loading.
+        origin = element.getEffectiveOrigin();
+        radius = Math.max(0.01, Number(element.radius) || 0.01);
+    }
+
+    const horizontal = direction === 'x' ? origin[0] : origin[2];
+    const cross = direction === 'x' ? origin[2] : origin[0];
+    const rotationOffset = element instanceof TrackLink
+        ? ((direction === 'x' ? element.rotation[2] : element.rotation[0]) || 0) * Math.PI / 180
+        : 0;
+
+    return {
+        element,
+        horizontal,
+        vertical: origin[1],
+        cross,
+        radius,
+        rotationOffset
+    };
+}
+
+function planeToWorld(horizontal, vertical, cross, direction) {
+    return direction === 'x'
+        ? new THREE.Vector3(horizontal, vertical, cross)
+        : new THREE.Vector3(cross, vertical, horizontal);
+}
+
+function planeVectorToWorld(horizontal, vertical, cross, direction) {
+    return direction === 'x'
+        ? new THREE.Vector3(horizontal, vertical, cross)
+        : new THREE.Vector3(cross, vertical, horizontal);
+}
+
+function calculateSignedArea(nodes) {
+    if (nodes.length < 3) return 0;
+    let signedArea = 0;
+    for (let index = 0; index < nodes.length; index++) {
+        const current = nodes[index];
+        const next = nodes[(index + 1) % nodes.length];
+        signedArea += current.horizontal * next.vertical - next.horizontal * current.vertical;
+    }
+    return signedArea;
+}
+
+function calculateWinding(nodes) {
+    const signedArea = calculateSignedArea(nodes);
+    return Math.abs(signedArea) <= EPSILON ? -1 : (signedArea > 0 ? 1 : -1);
+}
+
+function rotateCycle(nodes, startIndex) {
+    if (startIndex <= 0) return nodes.slice();
+    return nodes.slice(startIndex).concat(nodes.slice(0, startIndex));
+}
+
+function reverseCycleKeepingFirst(nodes) {
+    return nodes.length < 3 ? nodes.slice() : [nodes[0], ...nodes.slice(1).reverse()];
+}
+
+function canonicaliseWheelOrder(track, sourceNodes) {
+    let nodes = sourceNodes.slice();
+    const firstWheelIndex = nodes.findIndex(node => node.radius > EPSILON);
+    if (firstWheelIndex < 0) return nodes;
+
+    nodes = rotateCycle(nodes, firstWheelIndex);
+    if (nodes.length > 2) {
+        const first = nodes[0];
+        const forwardSign = getTrackAxisSign(track);
+        const nextDistinct = nodes.slice(1).find(node => Math.abs(node.horizontal - first.horizontal) > EPSILON);
+        // Convention: the first wheel is the front wheel and the cycle proceeds rearwards from
+        // it along the lower run. This fixes traversal independently of the wheel centres' area.
+        if (nextDistinct && (nextDistinct.horizontal - first.horizontal) * forwardSign > EPSILON) {
+            nodes = reverseCycleKeepingFirst(nodes);
+        }
+    }
+    return nodes;
+}
+
+function calculateExternalTangent(first, second, side) {
+    const dx = second.horizontal - first.horizontal;
+    const dy = second.vertical - first.vertical;
+    const distanceSquared = dx * dx + dy * dy;
+    const radiusDifference = first.radius - second.radius;
+    const tangentSquared = distanceSquared - radiusDifference * radiusDifference;
+
+    if (distanceSquared <= EPSILON || tangentSquared <= EPSILON) {
+        return {valid: false, spanLength: 0};
+    }
+
+    const tangentLength = Math.sqrt(tangentSquared);
+    const normalX = (dx * radiusDifference - dy * tangentLength * side) / distanceSquared;
+    const normalY = (dy * radiusDifference + dx * tangentLength * side) / distanceSquared;
+
+    return {
+        valid: true,
+        spanLength: tangentLength,
+        start: {
+            x: first.horizontal + normalX * first.radius,
+            y: first.vertical + normalY * first.radius
+        },
+        end: {
+            x: second.horizontal + normalX * second.radius,
+            y: second.vertical + normalY * second.radius
+        }
+    };
+}
+
+function getWheelArcDelta(node, incoming, outgoing, winding) {
+    const startAngle = Math.atan2(incoming.y - node.vertical, incoming.x - node.horizontal);
+    const endAngle = Math.atan2(outgoing.y - node.vertical, outgoing.x - node.horizontal);
+    let delta = endAngle - startAngle;
+    if (winding > 0) while (delta < 0) delta += TWO_PI;
+    else while (delta > 0) delta -= TWO_PI;
+    return {startAngle, delta};
+}
+
+function chooseDegenerateNode(nodes, edgeIndex) {
+    const nextIndex = (edgeIndex + 1) % nodes.length;
+    const first = nodes[edgeIndex];
+    const second = nodes[nextIndex];
+
+    if (first.radius <= EPSILON && second.radius <= EPSILON) return nextIndex;
+    if (first.radius <= EPSILON) return edgeIndex;
+    if (second.radius <= EPSILON) return nextIndex;
+
+    // Index zero is the declared front wheel and remains the orientation anchor.
+    if (edgeIndex === 0) return nextIndex;
+    if (nextIndex === 0) return edgeIndex;
+    if (Math.abs(first.radius - second.radius) > EPSILON) {
+        return first.radius < second.radius ? edgeIndex : nextIndex;
+    }
+    return nextIndex;
+}
+
+function solveTrackEnvelope(track, sourceNodes) {
+    let nodes = canonicaliseWheelOrder(track, sourceNodes);
+    const maximumIterations = Math.max(1, nodes.length * 2);
+
+    for (let iteration = 0; iteration < maximumIterations && nodes.length >= 2; iteration++) {
+        const hasWheel = nodes.some(node => node.radius > EPSILON);
+        const winding = hasWheel ? -1 : calculateWinding(nodes);
+        const tangentSide = -winding;
+        const tangents = nodes.map((node, index) =>
+            calculateExternalTangent(node, nodes[(index + 1) % nodes.length], tangentSide)
+        );
+
+        const invalidEdge = tangents.findIndex(tangent => !tangent.valid || tangent.spanLength <= EPSILON);
+        if (invalidEdge >= 0) {
+            if (nodes.length <= 2) return null;
+            nodes.splice(chooseDegenerateNode(nodes, invalidEdge), 1);
+            nodes = canonicaliseWheelOrder(track, nodes);
+            continue;
+        }
+
+        let rejectedWheel = -1;
+        let rejectedSweep = MAX_CONTACT_ARC;
+        for (let index = 0; index < nodes.length; index++) {
+            const node = nodes[index];
+            if (node.radius <= EPSILON) continue;
+            const incoming = tangents[(index - 1 + nodes.length) % nodes.length].end;
+            const outgoing = tangents[index].start;
+            const {delta} = getWheelArcDelta(node, incoming, outgoing, winding);
+            const sweep = Math.abs(delta);
+            // A wheel demanding more than half a turn is inside the current envelope. Select
+            // the worst offender rather than the first one: neighbouring sprockets can also be
+            // pulled slightly over PI by the bad idler, but the idler has the largest sweep.
+            if (sweep > rejectedSweep && (index !== 0 || rejectedWheel < 0)) {
+                rejectedWheel = index;
+                rejectedSweep = sweep;
+            }
+        }
+        // Preserve the declared front wheel when another invalid wheel can be removed instead.
+        if (rejectedWheel === 0) {
+            for (let index = 1; index < nodes.length; index++) {
+                const node = nodes[index];
+                if (node.radius <= EPSILON) continue;
+                const incoming = tangents[(index - 1 + nodes.length) % nodes.length].end;
+                const outgoing = tangents[index].start;
+                const sweep = Math.abs(getWheelArcDelta(node, incoming, outgoing, winding).delta);
+                if (sweep > MAX_CONTACT_ARC && sweep >= rejectedSweep - 1e-4) {
+                    rejectedWheel = index;
+                    rejectedSweep = sweep;
+                }
+            }
+        }
+        if (rejectedWheel >= 0) {
+            if (nodes.length <= 2) return null;
+            nodes.splice(rejectedWheel, 1);
+            nodes = canonicaliseWheelOrder(track, nodes);
+            continue;
+        }
+
+        return {nodes, tangents, winding};
+    }
+    return null;
+}
+
+function addPathPoint(path, point) {
+    const previous = path[path.length - 1];
+    if (previous && previous.position.distanceToSquared(point.position) <= EPSILON * EPSILON) {
+        previous.rotationOffset = point.rotationOffset;
+        return;
+    }
+    path.push(point);
+}
+
+function appendWheelArc(path, node, incoming, outgoing, winding, direction, segmentLength) {
+    const {startAngle, delta} = getWheelArcDelta(node, incoming, outgoing, winding);
+    if (Math.abs(delta) <= EPSILON || Math.abs(delta) > MAX_CONTACT_ARC) return;
+
+    const preferredStepLength = Math.max(segmentLength * 0.5, 1 / 64);
+    const byAngle = Math.ceil(Math.abs(delta) / MAX_ARC_STEP);
+    const byLength = Math.ceil(Math.abs(delta) * node.radius / preferredStepLength);
+    const steps = Math.clamp(Math.max(2, byAngle, byLength), 2, 96);
+
+    for (let step = 0; step <= steps; step++) {
+        const angle = startAngle + delta * (step / steps);
+        addPathPoint(path, {
+            position: planeToWorld(
+                node.horizontal + Math.cos(angle) * node.radius,
+                node.vertical + Math.sin(angle) * node.radius,
+                node.cross,
+                direction
+            ),
+            rotationOffset: 0
+        });
+    }
+}
+
+function buildTrackPath(track, segmentLength) {
+    const direction = track.trackDirection || 'z';
+    const sourceNodes = track.getPathNodes();
+    if (sourceNodes.length < 2) return null;
+
+    const planeNodes = sourceNodes.map(node => getPlaneNode(node, direction));
+    const solution = solveTrackEnvelope(track, planeNodes);
+    if (!solution) return null;
+    const {nodes, tangents, winding} = solution;
+
+    const points = [];
+    nodes.forEach((node, index) => {
+        if (node.radius <= EPSILON) {
+            addPathPoint(points, {
+                position: planeToWorld(node.horizontal, node.vertical, node.cross, direction),
+                rotationOffset: node.rotationOffset
+            });
+            return;
+        }
+
+        const incoming = tangents[(index - 1 + nodes.length) % nodes.length].end;
+        const outgoing = tangents[index].start;
+        appendWheelArc(points, node, incoming, outgoing, winding, direction, segmentLength);
+    });
+
+    if (points.length > 2 && points[0].position.distanceToSquared(points[points.length - 1].position) <= EPSILON * EPSILON) {
+        points.pop();
+    }
+    if (points.length < 2) return null;
+
+    const distances = [0];
+    let totalDistance = 0;
+    for (let index = 1; index <= points.length; index++) {
+        const previous = points[index - 1].position;
+        const current = points[index % points.length].position;
+        const fragmentLength = previous.distanceTo(current);
+        if (fragmentLength <= EPSILON) continue;
+        totalDistance += fragmentLength;
+        distances.push(totalDistance);
+    }
+    if (totalDistance <= EPSILON || distances.length !== points.length + 1) return null;
+
+    return {
+        points,
+        distances,
+        totalDistance,
+        segmentCount: Math.max(1, Math.floor(totalDistance / segmentLength)),
+        direction,
+        winding
+    };
+}
+
+function findDistanceSegment(distances, distance) {
+    let low = 1;
+    let high = distances.length - 1;
+    while (low < high) {
+        const middle = (low + high) >> 1;
+        if (distances[middle] < distance) low = middle + 1;
+        else high = middle;
+    }
+    return low;
+}
+
+function sampleTrackPath(path, distance) {
+    const wrapped = ((distance % path.totalDistance) + path.totalDistance) % path.totalDistance;
+    const distanceIndex = findDistanceSegment(path.distances, wrapped);
+    const pointIndex = distanceIndex - 1;
+    const nextIndex = distanceIndex % path.points.length;
+    const startDistance = path.distances[distanceIndex - 1];
+    const endDistance = path.distances[distanceIndex];
+    const length = Math.max(EPSILON, endDistance - startDistance);
+    const factor = Math.clamp((wrapped - startDistance) / length, 0, 1);
+
+    const start = path.points[pointIndex];
+    const end = path.points[nextIndex];
+    const position = new THREE.Vector3().lerpVectors(start.position, end.position, factor);
+    const tangent = new THREE.Vector3().subVectors(end.position, start.position).normalize();
+    const rotationOffset = THREE.MathUtils.lerp(start.rotationOffset || 0, end.rotationOffset || 0, factor);
+
+    const horizontalTangent = path.direction === 'x' ? tangent.x : tangent.z;
+    const verticalTangent = tangent.y;
+    const outwardHorizontal = path.winding < 0 ? -verticalTangent : verticalTangent;
+    const outwardVertical = path.winding < 0 ? horizontalTangent : -horizontalTangent;
+
+    const localX = tangent;
+    const localY = planeVectorToWorld(outwardHorizontal, outwardVertical, 0, path.direction).normalize();
+    const localZ = new THREE.Vector3().crossVectors(localX, localY).normalize();
+    localY.crossVectors(localZ, localX).normalize();
+
+    const basis = new THREE.Matrix4().makeBasis(localX, localY, localZ);
+    const quaternion = new THREE.Quaternion().setFromRotationMatrix(basis);
+    if (Math.abs(rotationOffset) > EPSILON) {
+        quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rotationOffset));
+    }
+    return {position, quaternion};
+}
+
+function resetTrackPreviewCache(element) {
+    const cache = element._trackPreviewCache;
+    if (cache?.container) {
+        cache.container.parent?.remove(cache.container);
+        // Segment clones share geometry and materials with the cached GLTF model.
+        // Remove them without disposing those shared resources.
+        disposeObjectChildren(cache.container, false);
+    }
+    element._trackPreviewCache = null;
+}
+
+function ensureSegmentInstances(element, segmentModel, filename, count, forceRebuild) {
+    let cache = element._trackPreviewCache;
+    const mustRebuild = forceRebuild || !cache || cache.filename !== filename || cache.count !== count;
+    if (!mustRebuild) return cache;
+
+    resetTrackPreviewCache(element);
+    const container = new THREE.Group();
+    container.name = 'track_segments';
+    element.mesh.add(container);
+
+    const instances = [];
+    for (let index = 0; index < count; index++) {
+        const instance = segmentModel.clone(true);
+        instance.matrixAutoUpdate = true;
+        container.add(instance);
+        instances.push(instance);
+    }
+
+    cache = {filename, count, container, instances};
+    element._trackPreviewCache = cache;
+    return cache;
+}
+
+// ----------------------------------------------------------------------
+// Track preview controller
 // ----------------------------------------------------------------------
 new NodePreviewController(Track, {
     async setup(element) {
-        let object_3d = new THREE.Object3D();
-        object_3d.rotation.order = 'ZYX';
-        object_3d.uuid = element.uuid.toUpperCase();
-        object_3d.name = element.name;
-        object_3d.isElement = true;
-        object_3d.no_export = true;
-        Project.nodes_3d[element.uuid] = object_3d;
-
+        createPreviewObject(element);
         this.updateTransform(element);
-        await this.updateGeometry(element);
-
-        this.dispatchEvent('setup', { element });
+        await this.updateGeometry(element, true);
+        this.dispatchEvent('setup', {element});
     },
 
     updateTransform(element) {
-        let obj = element.mesh;
-        obj.position.fromArray(element.position);
-        obj.rotation.setFromDegreeArray(element.rotation);
-        obj.scale.fromArray(element.scale);
-
-        if (element.parent instanceof OutlinerNode) {
-            element.parent.scene_object.add(obj);
-        } else if (obj.parent !== Project.model_3d) {
-            Project.model_3d.add(obj);
-        }
-
-        obj.updateMatrixWorld();
+        const object = element.mesh;
+        object.position.fromArray(element.position);
+        object.rotation.setFromDegreeArray(element.rotation);
+        object.scale.fromArray(element.scale);
+        attachPreviewObject(element, true);
         this.updateGeometry(element);
-        this.dispatchEvent('update_transform', { element });
+        this.dispatchEvent('update_transform', {element});
     },
 
-    async updateGeometry(element) {
-        const group = element.mesh;
-        let segmentContainer = group.getObjectByName('track_segments');
-        if (!segmentContainer) {
-            segmentContainer = new THREE.Group();
-            segmentContainer.name = 'track_segments';
-            group.add(segmentContainer);
+    async updateGeometry(element, forceRebuild = false) {
+        const updateToken = element._trackGeometryUpdateToken = (element._trackGeometryUpdateToken || 0) + 1;
+        if (!element.mesh || element.getPathNodes().length < 2) {
+            resetTrackPreviewCache(element);
+            return;
         }
-        while (segmentContainer.children.length) {
-            segmentContainer.remove(segmentContainer.children[0]);
-        }
-
-        const nodes = getSortedNodes(element);
-        if (nodes.length < 2) return;
 
         let segmentModel;
         try {
             segmentModel = await loadSegmentModel(element.segmentModel);
-        } catch (e) {
-            console.warn(`Failed to load segment model "${element.segmentModel}":`, e);
-            const geom = new THREE.BoxGeometry(1, 0.3, 0.3);
-            const mat = new THREE.MeshBasicMaterial({ color: 0xff00ff, wireframe: true });
-            segmentContainer.add(new THREE.Mesh(geom, mat));
+        } catch (error) {
+            console.warn(`Failed to load track segment model "${element.segmentModel}":`, error);
+            return;
+        }
+        if (updateToken !== element._trackGeometryUpdateToken) return;
+
+        const segmentLength = getSegmentLength(element.segmentModel, segmentModel);
+        if (!(segmentLength > EPSILON)) {
+            console.warn(`Track segment model "${element.segmentModel}" has zero length`);
             return;
         }
 
-        const segmentLength = getSegmentLength(segmentModel);
-        if (segmentLength <= 0) {
-            console.warn('Segment model has zero length');
+        const path = buildTrackPath(element, segmentLength);
+        if (!path) {
+            resetTrackPreviewCache(element);
             return;
         }
 
-        // Collect positions and node pitch values
-        const points = [];
-        const nodePitches = [];
-        const direction = element.trackDirection || 'z';
+        const cache = ensureSegmentInstances(
+            element,
+            segmentModel,
+            element.segmentModel,
+            path.segmentCount,
+            forceRebuild
+        );
+        const step = path.totalDistance / path.segmentCount;
+        const progressOffset = clamp01(element.progress) * path.totalDistance;
 
-        for (const node of nodes) {
-            const pos = new THREE.Vector3(node.origin[0], node.origin[1], node.origin[2]);
-            points.push(pos);
+        cache.instances.forEach((instance, index) => {
+            const sample = sampleTrackPath(path, index * step + progressOffset);
+            instance.position.copy(sample.position);
+            instance.quaternion.copy(sample.quaternion);
+            instance.updateMatrix();
+        });
 
-            // Pitch from node rotation (Z for X direction, X for Z direction)
-            let pitchDeg = (direction === 'x') ? node.rotation[2] : node.rotation[0];
-            nodePitches.push(pitchDeg * Math.PI / 180);
-        }
-
-        // Duplicate first point to close the loop
-        const loopPoints = points.concat(points[0]);
-        const loopPitches = nodePitches.concat(nodePitches[0]);
-
-        // Compute cumulative distances
-        const distances = [0];
-        let totalDist = 0;
-        for (let i = 1; i < loopPoints.length; i++) {
-            const dist = loopPoints[i].distanceTo(loopPoints[i-1]);
-            totalDist += dist;
-            distances.push(totalDist);
-        }
-
-        if (totalDist <= 0) return;
-
-        const numSegments = Math.max(1, Math.floor(totalDist / segmentLength));
-        const step = totalDist / numSegments;
-
-        // Progress offset (0 to 1)
-        const progress = element.progress || 0;
-
-        const sampleAtDistance = (d) => {
-            d = (d + progress * totalDist) % totalDist;
-            // Find segment
-            let i = 1;
-            while (i < distances.length && distances[i] < d) i++;
-
-            const t = (d - distances[i-1]) / (distances[i] - distances[i-1]);
-
-            // Interpolate position
-            const p1 = loopPoints[i-1];
-            const p2 = loopPoints[i];
-            const pos = new THREE.Vector3().lerpVectors(p1, p2, t);
-
-            // Compute direction vector (tangent)
-            const dir = new THREE.Vector3().subVectors(p2, p1).normalize();
-
-            // Compute incline pitch from height difference
-            let inclinePitch;
-            if (direction === 'x') {
-                inclinePitch = Math.atan2(dir.y, dir.x);
-            } else {
-                inclinePitch = Math.atan2(dir.y, dir.z);
-            }
-
-            // Interpolate node pitch
-            const pitch1 = loopPitches[i-1];
-            const pitch2 = loopPitches[i];
-            const nodePitch = (1 - t) * pitch1 + t * pitch2;
-
-            const totalPitch = inclinePitch + nodePitch;
-
-            // Build quaternion
-            const quat = new THREE.Quaternion();
-
-            if (direction === 'x') {
-                // Rotate around Z by totalPitch
-                quat.setFromAxisAngle(new THREE.Vector3(0, 0, 1), totalPitch);
-            } else {
-                // Direction Z: first rotate +90° around Y, then apply pitch around X
-                const yawQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2);
-                const pitchQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), totalPitch);
-                quat.multiplyQuaternions(yawQuat, pitchQuat);
-            }
-
-            return { pos, quat };
-        };
-
-        // Place segment instances
-        for (let i = 0; i < numSegments; i++) {
-            const d = i * step;
-            const { pos, quat } = sampleAtDistance(d);
-
-            const instance = segmentModel.clone(true);
-            instance.position.copy(pos);
-            instance.quaternion.copy(quat);
-
-            segmentContainer.add(instance);
-        }
-
-        this.dispatchEvent('update_geometry', { element });
+        element._compiledTrackPath = path;
+        this.dispatchEvent('update_geometry', {element});
     },
 
     updateVisibility(element) {
         element.mesh.visible = element.visibility;
-        this.dispatchEvent('update_visibility', { element });
+        this.dispatchEvent('update_visibility', {element});
     },
 
     updateSelection(element) {
-        this.dispatchEvent('update_selection', { element });
+        this.dispatchEvent('update_selection', {element});
     }
 });
 
 // ----------------------------------------------------------------------
-// Track Animator (timeline support) - revised without KeyframeDataPoint.types
+// Scalar animation support
 // ----------------------------------------------------------------------
-export class TrackAnimator extends GeneralAnimator {
+let scalarKeyframeProperties = [];
+
+function registerScalarKeyframeProperties() {
+    if (typeof KeyframeDataPoint === 'undefined') return;
+
+    if (!KeyframeDataPoint.properties.ii_track_progress) {
+        scalarKeyframeProperties.push(new Property(KeyframeDataPoint, 'molang', 'ii_track_progress', {
+            label: 'Progress',
+            default: '0',
+            condition: point => point.keyframe.channel === 'progress'
+        }));
+    }
+    if (!KeyframeDataPoint.properties.ii_track_compression) {
+        scalarKeyframeProperties.push(new Property(KeyframeDataPoint, 'molang', 'ii_track_compression', {
+            label: 'Compression',
+            default: '0',
+            condition: point => point.keyframe.channel === 'compression'
+        }));
+    }
+    if (!KeyframeDataPoint.properties.ii_track_rotation) {
+        scalarKeyframeProperties.push(new Property(KeyframeDataPoint, 'molang', 'ii_track_rotation', {
+            label: 'Rotation',
+            default: '0',
+            condition: point => point.keyframe.channel === 'rotation'
+        }));
+    }
+}
+
+function getScalarPropertyName(channel) {
+    if (channel === 'compression') return 'ii_track_compression';
+    if (channel === 'rotation') return 'ii_track_rotation';
+    return 'ii_track_progress';
+}
+
+function normaliseScalarValue(channel, value) {
+    const number = Number(value) || 0;
+    return channel === 'rotation' ? number : clamp01(number);
+}
+
+function getElementScalarValue(element, channel) {
+    return channel === 'rotation' ? (Number(element?.wheelRotation) || 0) : (Number(element?.[channel]) || 0);
+}
+
+function keyframeScalarProperty(element, channel, value) {
+    if (!Modes.animate || !Animator.open || !Animation.selected || !element.constructor.animator) return;
+    const animator = Animation.selected.getBoneAnimator(element);
+    if (!animator || !animator.channels?.[channel]) return;
+
+    const result = animator.getOrMakeKeyframe(channel)?.result;
+    if (!result) return;
+    result.set(getScalarPropertyName(channel), normaliseScalarValue(channel, value));
+    Animation.selected.setLength();
+    Animator.preview();
+}
+
+function readScalarKeyframe(keyframe) {
+    if (!keyframe) return 0;
+    const property = getScalarPropertyName(keyframe.channel);
+    const point = keyframe.data_points?.[0];
+
+    // Older IIToolkit builds stored the scalar in x (or in an unregistered value field).
+    // Prefer that legacy value when the new property only contains its untouched default.
+    const legacyValue = point?.x ?? point?.value;
+    const currentRaw = point?.[property];
+    const useLegacy = legacyValue !== undefined && (currentRaw === undefined || String(currentRaw) === '0');
+    const selectedProperty = useLegacy && point?.x !== undefined ? 'x' : property;
+
+    if (typeof keyframe.calc === 'function') {
+        const calculated = keyframe.calc(selectedProperty);
+        if (Number.isFinite(Number(calculated))) return Number(calculated);
+    }
+    const value = useLegacy ? legacyValue : currentRaw;
+    return Number(value) || 0;
+}
+
+class ScalarElementAnimator extends GeneralAnimator {
     constructor(uuid, animation) {
         super(uuid, animation);
-        this.name = this.getElement()?.name || 'Track';
-        this.progress = [];
+        this[this.constructor.scalarChannel] = [];
+        this.name = this.getElement()?.name || this.constructor.displayName;
     }
 
     getElement() {
@@ -731,31 +1719,21 @@ export class TrackAnimator extends GeneralAnimator {
         return this.element;
     }
 
-    select(element_is_selected) {
+    select(elementIsSelected) {
         if (!this.getElement()) {
             unselectAllElements();
             return this;
         }
-        if (this.getElement().locked) return;
-
-        if (element_is_selected !== true && this.element) {
-            this.element.select();
-        }
+        if (this.element.locked) return this;
+        if (elementIsSelected !== true) this.element.select();
         GeneralAnimator.prototype.select.call(this);
 
-        if (this[Toolbox.selected.animation_channel] && (Timeline.selected.length == 0 || Timeline.selected[0].animator != this)) {
-            let nearest;
-            this.progress.forEach(kf => {
-                if (Math.abs(kf.time - Timeline.time) < 0.002) {
-                    nearest = kf;
-                }
-            });
+        const channel = this.constructor.scalarChannel;
+        if (this[channel] && (Timeline.selected.length === 0 || Timeline.selected[0].animator !== this)) {
+            const nearest = this[channel].find(keyframe => Math.abs(keyframe.time - Timeline.time) < 0.002);
             if (nearest) nearest.select();
         }
-
-        if (this.element && this.element.parent && this.element.parent !== 'root') {
-            this.element.parent.openUp();
-        }
+        if (this.element.parent && this.element.parent !== 'root') this.element.parent.openUp();
         return this;
     }
 
@@ -763,126 +1741,173 @@ export class TrackAnimator extends GeneralAnimator {
         return this.getElement() && this.element.mesh;
     }
 
-    displayFrame(multiplier = 1) {
+    displayFrame() {
         if (!this.doRender()) return;
-        const element = this.getElement();
-        if (this.muted.progress) return;
-
-        const progressValue = this.interpolate('progress');
-        if (progressValue !== false) {
-            element.progress = progressValue;
-            Track.preview_controller.updateGeometry(element);
-        }
+        const channel = this.constructor.scalarChannel;
+        if (this.muted[channel]) return;
+        this.constructor.applyValue(this.element, normaliseScalarValue(channel, this.interpolate(channel)));
     }
 
-    interpolate(channel, allow_expression, axis) {
-        if (channel !== 'progress') return super.interpolate(channel, allow_expression, axis);
+    interpolate(channel) {
+        if (channel !== this.constructor.scalarChannel) return 0;
+        const keyframes = this[channel];
+        if (!keyframes.length) return getElementScalarValue(this.getElement(), channel);
 
-        let time = this.animation.time;
+        const time = this.animation.time;
         let before = null;
         let after = null;
-        let before_time = 0;
-        let after_time = 0;
-        const epsilon = 1/1200;
-
-        for (let keyframe of this.progress) {
-            if (keyframe.time < time) {
-                if (!before || keyframe.time > before_time) {
-                    before = keyframe;
-                    before_time = before.time;
-                }
-            } else {
-                if (!after || keyframe.time < after_time) {
-                    after = keyframe;
-                    after_time = after.time;
-                }
+        let beforeTime = 0;
+        let afterTime = 0;
+        for (const keyframe of keyframes) {
+            if (keyframe.time <= time && (!before || keyframe.time > beforeTime)) {
+                before = keyframe;
+                beforeTime = keyframe.time;
+            }
+            if (keyframe.time >= time && (!after || keyframe.time < afterTime)) {
+                after = keyframe;
+                afterTime = keyframe.time;
             }
         }
 
-        // Loop wrapping
-        if (Format.animation_loop_wrapping && this.animation.loop == 'loop' && this.progress.length >= 2) {
-            let anim_length = this.animation.length;
+        if (Format.animation_loop_wrapping && this.animation.loop === 'loop' && keyframes.length >= 2) {
             if (!before) {
-                before = this.progress.findHighest(kf => kf.time);
-                before_time = before.time - anim_length;
+                before = keyframes.reduce((result, keyframe) => !result || keyframe.time > result.time ? keyframe : result, null);
+                beforeTime = before.time - this.animation.length;
             }
             if (!after) {
-                after = this.progress.findHighest(kf => -kf.time);
-                after_time = after.time + anim_length;
+                after = keyframes.reduce((result, keyframe) => !result || keyframe.time < result.time ? keyframe : result, null);
+                afterTime = after.time + this.animation.length;
             }
         }
 
-        if (before && Math.epsilon(before_time, time, epsilon)) {
-            return before.data_points[0]?.value ?? 0;
-        } else if (after && Math.epsilon(after_time, time, epsilon)) {
-            return after.data_points[0]?.value ?? 0;
-        } else if (before && !after) {
-            return before.data_points[0]?.value ?? 0;
-        } else if (after && !before) {
-            return after.data_points[0]?.value ?? 0;
-        } else if (before && after) {
-            const alpha = Math.getLerp(before_time, after_time, time);
-            if (before.interpolation == 'step') {
-                return before.data_points[0]?.value ?? 0;
-            } else {
-                const val1 = before.data_points[0]?.value ?? 0;
-                const val2 = after.data_points[0]?.value ?? 0;
-                return (1 - alpha) * val1 + alpha * val2;
-            }
-        }
-        return 0;
+        if (before && Math.abs(beforeTime - time) < 1 / 1200) return readScalarKeyframe(before);
+        if (after && Math.abs(afterTime - time) < 1 / 1200) return readScalarKeyframe(after);
+        if (before && !after) return readScalarKeyframe(before);
+        if (after && !before) return readScalarKeyframe(after);
+        if (!before || !after) return 0;
+        if (before.interpolation === 'step') return readScalarKeyframe(before);
+
+        const factor = Math.getLerp(beforeTime, afterTime, time);
+        const beforeValue = readScalarKeyframe(before);
+        return beforeValue + (readScalarKeyframe(after) - beforeValue) * factor;
     }
 
     createKeyframe(value, time, channel, undo, select) {
-        if (channel !== 'progress') return super.createKeyframe(value, time, channel, undo, select);
-
+        if (channel !== this.constructor.scalarChannel) return super.createKeyframe(value, time, channel, undo, select);
         if (typeof time !== 'number') time = Timeline.time;
-        let keyframes = [];
+
+        const keyframes = [];
         if (undo) Undo.initEdit({keyframes});
 
-        let keyframe = new Keyframe({
-            channel: 'progress',
-            time: time,
+        const keyframe = new Keyframe({
+            channel,
+            time,
             interpolation: settings.default_keyframe_interpolation.value,
         }, null, this);
         keyframes.push(keyframe);
 
-        // Initialize data point with numeric value
-        keyframe.data_points = [{
-            value: (value && typeof value === 'object' && 'value' in value) ? value.value : 0
-        }];
+        let scalar;
+        if (typeof value === 'number') scalar = value;
+        else if (value && typeof value === 'object') {
+            scalar = value.x ?? value.value ?? value.data_points?.[0]?.x;
+        }
+        if (scalar === undefined || scalar === null || scalar === '') scalar = getElementScalarValue(this.getElement(), channel);
+        keyframe.set(getScalarPropertyName(channel), normaliseScalarValue(channel, scalar));
 
+        keyframe.channel = channel;
         keyframe.time = Timeline.snapTime(time);
-        this.progress.push(keyframe);
+        this[channel].push(keyframe);
         keyframe.animator = this;
-
         if (select !== false) keyframe.select();
 
-        let deleted = [];
+        const deleted = [];
         delete keyframe.time_before;
         keyframe.replaceOthers(deleted);
-        if (deleted.length && Undo.current_save) {
-            Undo.addKeyframeCasualties(deleted);
-        }
+        if (deleted.length && Undo.current_save) Undo.addKeyframeCasualties(deleted);
         Animation.selected.setLength();
-
         if (undo) Undo.finishEdit('Add keyframe');
         return keyframe;
     }
 }
+
+export class TrackAnimator extends ScalarElementAnimator {}
+TrackAnimator.scalarChannel = 'progress';
+TrackAnimator.displayName = 'Track';
+TrackAnimator.applyValue = (element, value) => {
+    element.progress = value;
+    Track.preview_controller.updateGeometry(element);
+};
 TrackAnimator.prototype.type = 'track';
 TrackAnimator.prototype.channels = {
-    progress: { name: 'Progress', mutable: true, transform: false, max_data_points: 1 }
+    progress: {name: 'Progress', mutable: true, transform: false, max_data_points: 1}
 };
 Track.animator = TrackAnimator;
 
-// Remove the KeyframeDataPoint.types assignment and Keyframe prototype overrides.
-// Instead, we rely on the fact that Keyframe already stores arbitrary data in data_points.
+export class TrackSuspenderAnimator extends ScalarElementAnimator {}
+TrackSuspenderAnimator.scalarChannel = 'compression';
+TrackSuspenderAnimator.displayName = 'Track Suspender';
+TrackSuspenderAnimator.applyValue = (element, value) => {
+    element.compression = value;
+    TrackSuspender.preview_controller.updateGeometry(element);
+};
+TrackSuspenderAnimator.prototype.type = 'track_suspender';
+TrackSuspenderAnimator.prototype.channels = {
+    compression: {name: 'Compression', mutable: true, transform: false, max_data_points: 1}
+};
+TrackSuspender.animator = TrackSuspenderAnimator;
+
+export class TrackWheelAnimator extends ScalarElementAnimator {}
+TrackWheelAnimator.scalarChannel = 'rotation';
+TrackWheelAnimator.displayName = 'Track Wheel';
+TrackWheelAnimator.applyValue = (element, value) => {
+    element.wheelRotation = value;
+    applyWheelRotation(element);
+};
+TrackWheelAnimator.prototype.type = 'track_wheel';
+TrackWheelAnimator.prototype.channels = {
+    rotation: {name: 'Rotation', mutable: true, transform: false, max_data_points: 1}
+};
+TrackWheel.animator = TrackWheelAnimator;
 
 // ----------------------------------------------------------------------
 // Actions
 // ----------------------------------------------------------------------
-let addTrackAction, addTrackNodeAction;
+let addTrackAction;
+let addTrackLinkAction;
+let addTrackSuspenderAction;
+let addTrackWheelAction;
+let addTrackVisualMeshAction;
+
+function getSelectedTrack() {
+    if (Track.hasSelected()) return Track.selected[0];
+    if (TrackLink.hasSelected()) return TrackLink.selected[0].getTrack();
+    if (TrackSuspender.hasSelected()) return TrackSuspender.selected[0].getTrack();
+    if (TrackWheel.hasSelected()) return TrackWheel.selected[0].getTrack();
+    return null;
+}
+
+function getSelectedSuspender() {
+    if (TrackSuspender.hasSelected()) return TrackSuspender.selected[0];
+    if (TrackWheel.hasSelected()) return TrackWheel.selected[0].getSuspender();
+    return null;
+}
+
+function getSelectedVisualParent() {
+    if (TrackWheel.hasSelected()) return TrackWheel.selected[0];
+    if (TrackSuspender.hasSelected()) return TrackSuspender.selected[0];
+    return null;
+}
+
+function nextNodeOrigin(track) {
+    const nodes = track.getPathNodes();
+    if (!nodes.length) return [0, 0, 0];
+    const last = nodes[nodes.length - 1];
+    const origin = last.origin.slice();
+    const rearwardStep = -getTrackAxisSign(track) * 2;
+    if (track.trackDirection === 'x') origin[0] += rearwardStep;
+    else origin[2] += rearwardStep;
+    return origin;
+}
 
 function createActions() {
     addTrackAction = new Action('add_track', {
@@ -892,9 +1917,8 @@ function createActions() {
         condition: () => Modes.edit,
         click() {
             Undo.initEdit({outliner: true, elements: [], selection: true});
-            let track = new Track().init();
-            let group = getCurrentGroup();
-            track.addTo(group);
+            const track = new Track().init();
+            track.addTo(getCurrentGroup());
             track.createUniqueName();
             unselectAll();
             track.select();
@@ -904,29 +1928,117 @@ function createActions() {
         }
     });
 
-    addTrackNodeAction = new Action('add_track_node', {
-        name: 'Add Track Node',
-        icon: 'link',
+    // Keep the legacy action ID so existing menus and keybindings continue to work.
+    addTrackLinkAction = new Action('add_track_node', {
+        name: 'Add Track Link',
+        icon: 'timeline',
         category: 'edit',
-        condition: () => Modes.edit && Track.hasSelected(),
+        condition: () => Modes.edit && !!getSelectedTrack(),
         click() {
-            const track = Track.selected[0];
+            const track = getSelectedTrack();
+            if (!track) return null;
+
             Undo.initEdit({outliner: true, elements: [], selection: true});
-            let node = new TrackNode().init();
-            node.addTo(track);
-            // Place slightly offset along chosen direction
-            const offset = track.trackDirection === 'x' ? [2, 0, 0] : [0, 0, 2];
-            node.origin = offset;
-            node.createUniqueName();
+            const link = new TrackLink().init();
+            link.origin = nextNodeOrigin(track);
+            link.addTo(track);
+            rebuildTrackLinkVisual(link);
+            TrackLink.preview_controller.updateTransform(link);
+            link.createUniqueName();
             unselectAll();
-            node.select();
-            Undo.finishEdit('Add Track Node', {outliner: true, elements: selected, selection: true});
-            Blockbench.dispatchEvent('add_track_node', {object: node});
-            return node;
+            link.select();
+            Undo.finishEdit('Add Track Link', {outliner: true, elements: selected, selection: true});
+            Track.preview_controller.updateGeometry(track);
+            Blockbench.dispatchEvent('add_track_node', {object: link});
+            return link;
         }
     });
 
-    deletables.push(addTrackAction, addTrackNodeAction);
+    addTrackSuspenderAction = new Action('add_track_suspender', {
+        name: 'Add Track Suspender',
+        icon: 'vertical_align_center',
+        category: 'edit',
+        condition: () => Modes.edit && !!getSelectedTrack(),
+        click() {
+            const track = getSelectedTrack();
+            if (!track) return null;
+
+            Undo.initEdit({outliner: true, elements: [], selection: true});
+            const suspender = new TrackSuspender().init();
+            suspender.origin = nextNodeOrigin(track);
+            suspender.addTo(track);
+            TrackSuspender.preview_controller.updateTransform(suspender);
+            suspender.createUniqueName();
+            unselectAll();
+            suspender.select();
+            Undo.finishEdit('Add Track Suspender', {outliner: true, elements: selected, selection: true});
+            Blockbench.dispatchEvent('add_track_suspender', {object: suspender});
+            return suspender;
+        }
+    });
+
+    addTrackWheelAction = new Action('add_track_wheel', {
+        name: 'Add Track Wheel',
+        icon: 'radio_button_unchecked',
+        category: 'edit',
+        condition: () => {
+            if (!Modes.edit) return false;
+            if (Track.hasSelected()) return true;
+            const suspender = getSelectedSuspender();
+            return !!suspender && !suspender.getWheel();
+        },
+        click() {
+            const suspender = getSelectedSuspender();
+            const directTrack = Track.hasSelected() ? Track.selected[0] : null;
+            const parent = suspender || directTrack;
+            if (!parent || (suspender && suspender.getWheel())) return null;
+
+            const track = parent instanceof Track ? parent : parent.getTrack();
+            if (!track) return null;
+
+            Undo.initEdit({outliner: true, elements: [], selection: true});
+            const wheel = new TrackWheel().init();
+            if (parent instanceof Track) wheel.origin = nextNodeOrigin(track);
+            wheel.addTo(parent);
+            TrackWheel.preview_controller.updateTransform(wheel);
+            wheel.createUniqueName();
+            unselectAll();
+            wheel.select();
+            Undo.finishEdit('Add Track Wheel', {outliner: true, elements: selected, selection: true});
+            Track.preview_controller.updateGeometry(track);
+            Blockbench.dispatchEvent('add_track_wheel', {object: wheel, parent});
+            return wheel;
+        }
+    });
+
+    addTrackVisualMeshAction = new Action('add_track_visual_mesh', {
+        name: 'Add Visual Mesh',
+        icon: 'polyline',
+        category: 'edit',
+        condition: () => Modes.edit && !!getSelectedVisualParent(),
+        click() {
+            const parent = getSelectedVisualParent();
+            if (!parent) return null;
+
+            Undo.initEdit({outliner: true, elements: [], selection: true});
+            const mesh = new Mesh({name: parent instanceof TrackWheel ? 'wheel_visual' : 'suspension_visual'}).init();
+            mesh.addTo(parent);
+            mesh.createUniqueName();
+            unselectAll();
+            mesh.select();
+            Undo.finishEdit('Add Track Visual Mesh', {outliner: true, elements: selected, selection: true});
+            Canvas.updateAll();
+            return mesh;
+        }
+    });
+
+    deletables.push(
+        addTrackAction,
+        addTrackLinkAction,
+        addTrackSuspenderAction,
+        addTrackWheelAction,
+        addTrackVisualMeshAction
+    );
 }
 
 // ----------------------------------------------------------------------
@@ -934,19 +2046,26 @@ function createActions() {
 // ----------------------------------------------------------------------
 export function registerTrack() {
     if (registered) return;
+    registerScalarKeyframeProperties();
     createActions();
 
-    let add_element_menu = BarItems.add_element.side_menu;
-    add_element_menu.addAction(addTrackAction);
+    BarItems.add_element.side_menu.addAction(addTrackAction);
 
     window.Track = Track;
-    window.TrackNode = TrackNode;
+    window.TrackLink = TrackLink;
+    window.TrackNode = TrackLink;
+    window.TrackSuspender = TrackSuspender;
+    window.TrackWheel = TrackWheel;
     window.TrackAnimator = TrackAnimator;
+    window.TrackSuspenderAnimator = TrackSuspenderAnimator;
+    window.TrackWheelAnimator = TrackWheelAnimator;
     registered = true;
 }
 
 export function unregisterTrackActions() {
     deletables.forEach(action => action.delete());
     deletables.length = 0;
+    scalarKeyframeProperties.forEach(property => property.delete?.());
+    scalarKeyframeProperties = [];
     registered = false;
 }

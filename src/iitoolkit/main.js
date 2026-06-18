@@ -20,6 +20,7 @@ import {registerTrack, unregisterTrackActions} from "./elements/track";
 import {registerWire, unregisterWireActions} from "./elements/wire";
 import {registerPipe, unregisterPipeActions} from "./elements/pipe";
 import {registerFluid, unregisterFluidActions} from "./elements/fluid";
+import {registerEmbeddedPart, unregisterEmbeddedPartActions} from "./elements/warehouse";
 
 
 var iiBarMenu = null;
@@ -41,6 +42,7 @@ const plugin = BBPlugin.register('iitoolkit', {
         registerWire();
         registerPipe();
         registerFluid();
+        registerEmbeddedPart();
 
         iiBarMenu = new BarMenu("iitoolkit", [ungroup, exportAnimationAMT, exportAMTModel, exportAABB], {
             name: 'Immersive Intelligence Toolkit'
@@ -67,6 +69,7 @@ const plugin = BBPlugin.register('iitoolkit', {
         unregisterWireActions();
         unregisterPipeActions();
         unregisterFluidActions();
+        unregisterEmbeddedPartActions();
 
         exportAnimationAMT.delete();
         exportAMTModel.delete();

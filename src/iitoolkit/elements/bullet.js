@@ -298,13 +298,15 @@ new NodePreviewController(Bullet, {
     async updateGeometry(element) {
         const group = element.mesh;
         if (!group) return;
-
-        while (group.children.length)
-            group.remove(group.children[0]);
+        const updateToken = element._bulletGeometryUpdateToken = (element._bulletGeometryUpdateToken || 0) + 1;
 
         try {
             const model = await loadModel(element.bulletType);
-            console.log(model);
+            if (updateToken !== element._bulletGeometryUpdateToken) return;
+
+            while (group.children.length)
+                group.remove(group.children[0]);
+
             if (model) {
                 group.add(model);
                 model.children.forEach(child => {
@@ -329,7 +331,10 @@ new NodePreviewController(Bullet, {
                 });
             }
         } catch (e) {
+            if (updateToken !== element._bulletGeometryUpdateToken) return;
             console.warn(`Failed to reload bullet model "${element.bulletType}":`, e);
+            while (group.children.length)
+                group.remove(group.children[0]);
             addPlaceholder(group);
         }
         this.dispatchEvent('update_geometry', {element});

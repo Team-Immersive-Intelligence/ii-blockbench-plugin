@@ -1,5 +1,7 @@
 //-- Export Dialogue --//
 import {getResourceLocation, normalizeVector} from '../utils'
+import {Pipe} from '../elements/pipe';
+import {collectVisibleMeshes, safeObjName} from '../elements/common';
 
 export var exportOptions = {
     export_mode: "obj",
@@ -244,6 +246,17 @@ function compileModel(options) {
         texture_names[t.uuid] = t.name.replace(/\.png$/i, '').toLowerCase();
     });
 
+    // Export generated IIToolkit geometry before the native mesh path.
+    // Native Mesh export below is intentionally left unchanged.
+    getExportOutlinerElements(options).forEach(element => {
+        if (element instanceof Pipe && element.export !== false && exportElements.includes(element.name)) {
+            const counts = appendPipeObj(compiled, element, exportScale, indexVertex, indexVertexUvs, indexNormals);
+            indexVertex += counts.vertices;
+            indexVertexUvs += counts.uvs;
+            indexNormals += counts.normals;
+        }
+    });
+
     // Traverse the scene
     scene.traverse(mesh => {
         if (mesh instanceof THREE.Mesh) {
@@ -376,10 +389,132 @@ function compileModel(options) {
     return compiled.join('\n');
 }
 
-function getExportElements(options) {
+function getExportOutlinerElements(options) {
     const attachment = options && options.attachment;
-    const elements = attachment ? attachment.getAllChildren() : Outliner.elements;
-    return [...new Set(elements.map(element => element?.name).filter(Boolean))];
+    return attachment ? attachment.getAllChildren() : Outliner.elements;
+}
+
+function getExportElements(options) {
+    return [...new Set(getExportOutlinerElements(options).map(element => element?.name).filter(Boolean))];
+}
+
+function appendPipeObj(compiled, pipe, exportScale, startVertex, startUv, startNormal) {
+    const counts = { vertices: 0, uvs: 0, normals: 0 };
+    if (!pipe.mesh || pipe.visibility === false) return counts;
+
+    pipe.mesh.updateMatrixWorld(true);
+    const pipeAssembly = pipe.mesh.getObjectByName('pipe_assembly');
+    const meshes = collectVisibleMeshes(pipeAssembly);
+    if (!meshes.length) {
+        compiled.push(`# Pipe "${pipe.name}" skipped: preview geometry is not ready`);
+        return counts;
+    }
+
+    compiled.push(`o ${safeObjName(pipe.name, 'pipe')}`);
+    let currentMaterial = null;
+
+    meshes.forEach(sourceMesh => {
+        const result = appendThreeMeshObj(
+            compiled,
+            sourceMesh,
+            exportScale,
+            startVertex + counts.vertices,
+            startUv + counts.uvs,
+            startNormal + counts.normals,
+            currentMaterial
+        );
+        currentMaterial = result.currentMaterial;
+        counts.vertices += result.vertices;
+        counts.uvs += result.uvs;
+        counts.normals += result.normals;
+    });
+
+    return counts;
+}
+
+function appendThreeMeshObj(compiled, sourceMesh, exportScale, indexVertex, indexVertexUvs, indexNormals, currentMaterial) {
+    let geometry = sourceMesh.geometry;
+    if (!geometry || !geometry.attributes || !geometry.attributes.position) {
+        return { vertices: 0, uvs: 0, normals: 0, currentMaterial };
+    }
+
+    if (!geometry.attributes.normal) {
+        geometry = geometry.clone();
+        geometry.computeVertexNormals();
+    }
+
+    const positionAttr = geometry.attributes.position;
+    const uvAttr = geometry.attributes.uv;
+    const normalAttr = geometry.attributes.normal;
+    const vertex = new THREE.Vector3();
+    const normal = new THREE.Vector3();
+    const uv = new THREE.Vector2();
+    const normalMatrixWorld = new THREE.Matrix3().getNormalMatrix(sourceMesh.matrixWorld);
+
+    for (let i = 0; i < positionAttr.count; i++) {
+        vertex.fromBufferAttribute(positionAttr, i);
+        vertex.applyMatrix4(sourceMesh.matrixWorld).divideScalar(exportScale);
+        compiled.push(`v ${roundObj(vertex.x, 10000)} ${roundObj(vertex.y, 10000)} ${roundObj(vertex.z, 10000)}`);
+    }
+
+    if (uvAttr) {
+        for (let i = 0; i < uvAttr.count; i++) {
+            uv.fromBufferAttribute(uvAttr, i);
+            compiled.push(`vt ${roundObj(uv.x, 10000)} ${roundObj(uv.y, 10000)}`);
+        }
+    }
+
+    if (normalAttr) {
+        for (let i = 0; i < normalAttr.count; i++) {
+            normal.fromBufferAttribute(normalAttr, i);
+            normal.applyMatrix3(normalMatrixWorld).normalize();
+            compiled.push(`vn ${roundObj(normal.x, 10000)} ${roundObj(normal.y, 10000)} ${roundObj(normal.z, 10000)}`);
+        }
+    }
+
+    const materialName = getMaterialName(sourceMesh.material);
+    if (materialName && materialName !== currentMaterial) {
+        currentMaterial = materialName;
+        compiled.push(`usemtl ${currentMaterial}`);
+    }
+
+    const indices = getGeometryIndices(geometry);
+    for (let i = 0; i + 2 < indices.length; i += 3) {
+        const triplets = [indices[i], indices[i + 1], indices[i + 2]].map(vertexIndex => {
+            const v = indexVertex + vertexIndex + 1;
+            const vt = uvAttr ? indexVertexUvs + vertexIndex + 1 : null;
+            const vn = normalAttr ? indexNormals + vertexIndex + 1 : null;
+            if (vt !== null && vn !== null) return `${v}/${vt}/${vn}`;
+            if (vt !== null) return `${v}/${vt}`;
+            if (vn !== null) return `${v}//${vn}`;
+            return `${v}`;
+        });
+        compiled.push(`f ${triplets.join(' ')}`);
+    }
+
+    return {
+        vertices: positionAttr.count,
+        uvs: uvAttr ? uvAttr.count : 0,
+        normals: normalAttr ? normalAttr.count : 0,
+        currentMaterial
+    };
+}
+
+function getGeometryIndices(geometry) {
+    if (geometry.index && geometry.index.array) return Array.from(geometry.index.array);
+    const count = geometry.attributes.position?.count || 0;
+    return Array.from({ length: count }, (_, index) => index);
+}
+
+function getMaterialName(material) {
+    if (Array.isArray(material)) material = material[0];
+    if (!material) return null;
+    const rawName = material.name || material.map?.name || material.map?.image?.src || 'pipe';
+    return safeObjName(String(rawName).replace(/\.[a-z0-9]+$/i, '').toLowerCase(), 'pipe');
+}
+
+function roundObj(value, precision) {
+    return Math.round(value * precision) / precision;
 }
 
 function compileMaterial() {
