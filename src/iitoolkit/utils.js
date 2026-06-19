@@ -1,4 +1,138 @@
+import './GLTFLoader';
+
 //Functions
+
+// ----------------------------------------------------------------------
+// Shared GLB preview loading and material normalisation
+// ----------------------------------------------------------------------
+// Blockbench's bundled GLTFLoader can pass legacy texture/material fields such
+// as "format" to MeshStandardMaterial. Three warns about those, and the GLB
+// textures commonly arrive as sRGB while our generated preview cuboids use
+// LinearEncoding. Keep all IIToolkit GLB previews on the same material path.
+const iiGLBModelCache = new Map();
+
+export function installIIGLBMaterialPatch() {
+    const materialPrototype = THREE?.Material?.prototype;
+    if (!materialPrototype || materialPrototype._iiToolkitGLBFormatPatchInstalled) return;
+
+    const originalSetValues = materialPrototype.setValues;
+    if (typeof originalSetValues !== 'function') return;
+
+    materialPrototype.setValues = function(values) {
+        if (values && Object.prototype.hasOwnProperty.call(values, 'format')) {
+            values = Object.assign({}, values);
+            delete values.format;
+        }
+        return originalSetValues.call(this, values);
+    };
+    materialPrototype._iiToolkitGLBFormatPatchInstalled = true;
+}
+
+export function normalizeIIPreviewTexture(texture, options = {}) {
+    if (!texture) return null;
+
+    texture.magFilter = options.magFilter || THREE.NearestFilter;
+    texture.minFilter = options.minFilter || THREE.NearestFilter;
+    texture.flipY = options.flipY !== undefined ? options.flipY : false;
+
+    if (THREE.LinearEncoding !== undefined) {
+        texture.encoding = THREE.LinearEncoding;
+    }
+    if ('colorSpace' in texture) {
+        texture.colorSpace = THREE.LinearSRGBColorSpace || THREE.NoColorSpace || texture.colorSpace;
+    }
+
+    texture.needsUpdate = true;
+    return texture;
+}
+
+export function createIIPreviewMaterial(sourceMaterial = {}, options = {}) {
+    const source = sourceMaterial || {};
+    if ('format' in source) delete source.format;
+
+    const map = normalizeIIPreviewTexture(
+        options.map !== undefined ? options.map : (source.map || source.emissiveMap || null),
+        options.texture || {}
+    );
+
+    const color = options.color || (source.color?.clone ? source.color.clone() : new THREE.Color(0xffffff));
+    const transparent = options.transparent !== undefined
+        ? options.transparent
+        : !!(source.transparent || (source.opacity !== undefined && source.opacity < 1));
+    const opacity = options.opacity !== undefined
+        ? options.opacity
+        : (source.opacity !== undefined ? source.opacity : 1);
+
+    const material = new THREE.MeshStandardMaterial({
+        name: options.name || source.name || 'ii_glb_preview_material',
+        map,
+        color,
+        roughness: 1,
+        metalness: 0,
+        transparent,
+        opacity,
+        alphaTest: options.alphaTest !== undefined ? options.alphaTest : (source.alphaTest || 0),
+        side: options.side !== undefined ? options.side : (source.side !== undefined ? source.side : THREE.FrontSide),
+        vertexColors: THREE.NoColors
+    });
+
+    material.aoMap = null;
+    material.lightMap = null;
+    material.normalMap = null;
+    material.bumpMap = null;
+    material.displacementMap = null;
+    material.roughnessMap = null;
+    material.metalnessMap = null;
+    material.envMap = null;
+    material.emissive = new THREE.Color(0x000000);
+    material.emissiveIntensity = 0;
+    material.no_export = options.noExport !== false;
+    material.needsUpdate = true;
+    return material;
+}
+
+export function normalizeIIGLBModel(model, options = {}) {
+    if (!model) return model;
+
+    model.traverse(node => {
+        if (!node.isMesh || !node.material) return;
+
+        node.castShadow = options.castShadow !== false;
+        node.receiveShadow = options.receiveShadow !== false;
+        node.no_export = options.noExport !== false;
+
+        if (Array.isArray(node.material)) {
+            node.material = node.material.map(material => createIIPreviewMaterial(material, options.material || {}));
+        } else {
+            node.material = createIIPreviewMaterial(node.material, options.material || {});
+        }
+    });
+
+    return model;
+}
+
+export async function loadIIGLBModel(url, options = {}) {
+    installIIGLBMaterialPatch();
+
+    const cacheKey = options.cacheKey || url;
+    if (!iiGLBModelCache.has(cacheKey)) {
+        iiGLBModelCache.set(cacheKey, new Promise((resolve, reject) => {
+            new THREE.GLTFLoader().load(
+                url,
+                gltf => {
+                    resolve(normalizeIIGLBModel(gltf.scene, options));
+                },
+                undefined,
+                reject
+            );
+        }));
+    }
+
+    const model = await iiGLBModelCache.get(cacheKey);
+    return options.clone === false ? model : model.clone(true);
+}
+
+
 
 /**
  *

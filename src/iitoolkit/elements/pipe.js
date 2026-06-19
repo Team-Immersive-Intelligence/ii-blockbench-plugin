@@ -1,4 +1,5 @@
 import '../GLTFLoader';
+import { loadIIGLBModel } from '../utils';
 import {
     collectVisibleMeshes,
     createPreviewObject3D,
@@ -411,36 +412,14 @@ new Property(Pipe, 'boolean', 'visibility', {default: true});
 // Model loading and part extraction
 // ----------------------------------------------------------------------
 async function loadPipeModel(typeKey) {
-    if (modelCache.has(typeKey)) {
-        return modelCache.get(typeKey).clone(true);
+    if (!modelCache.has(typeKey)) {
+        modelCache.set(typeKey, loadIIGLBModel(ASSET_BASE + typeKey, {
+            cacheKey: 'pipe:' + typeKey,
+            noExport: true
+        }));
     }
-    const url = ASSET_BASE + typeKey;
-    return new Promise((resolve, reject) => {
-        new THREE.GLTFLoader().load(url,
-            (gltf) => {
-                const model = gltf.scene;
-                model.traverse(node => {
-                    if (node.isMesh && node.material) {
-                        node.receiveShadow = true;
-                        node.castShadow = true;
-                        const materials = Array.isArray(node.material) ? node.material : [node.material];
-                        materials.forEach(mat => {
-                            const originalMap = mat.map;
-                            mat.roughness = 1.0;
-                            mat.metalness = 0.0;
-                            //Slight self-illumination
-                            mat.emissive = new THREE.Color(0x7f7f7f);
-                            mat.emissiveIntensity = 0.125 * 1.5;
-                        });
-                    }
-                });
-                modelCache.set(typeKey, model.clone(true));
-                resolve(model);
-            },
-            undefined,
-            reject
-        );
-    });
+    const model = await modelCache.get(typeKey);
+    return model.clone(true);
 }
 
 function extractParts(model) {

@@ -6,6 +6,7 @@ import {
     setPreviewVisibility,
     updatePreviewTransform
 } from './common';
+import { createIIPreviewMaterial, loadIIGLBModel } from '../utils';
 
 const ASSET_BASE = 'https://assets.iiteam.net/model/';
 const WAREHOUSE_URL = ASSET_BASE + 'warehouse.json';
@@ -35,25 +36,41 @@ fetchWarehouseData();
 // Utility: apply Three.js node transform to Blockbench element
 // ----------------------------------------------------------------------
 function applyNodeTransform(element, node) {
-    element.origin = [node.position.x, node.position.y, node.position.z];
+    const position = new THREE.Vector3();
+    const quaternion = new THREE.Quaternion();
+    const scale = new THREE.Vector3();
+
+    // GLTF nodes often keep their local transform in matrix form. Decompose that
+    // matrix directly so imported Embedded elements match the GLB hierarchy.
+    node.updateMatrix();
+    node.matrix.decompose(position, quaternion, scale);
+
+    const euler = new THREE.Euler().setFromQuaternion(quaternion, Format.euler_order || 'ZYX');
+    element.origin = [position.x, position.y, position.z];
     element.rotation = [
-        THREE.MathUtils.radToDeg(node.rotation.x),
-        THREE.MathUtils.radToDeg(node.rotation.y),
-        THREE.MathUtils.radToDeg(node.rotation.z)
+        THREE.MathUtils.radToDeg(euler.x),
+        THREE.MathUtils.radToDeg(euler.y),
+        THREE.MathUtils.radToDeg(euler.z)
     ];
-    element.scale = [node.scale.x, node.scale.y, node.scale.z];
+    element.scale = [scale.x, scale.y, scale.z];
 }
 
 function cloneMaterial(material) {
     if (Array.isArray(material)) {
-        return material.map(mat => mat?.clone ? mat.clone() : mat);
+        return material.map(mat => createIIPreviewMaterial(mat, {noExport: true}));
     }
-    return material?.clone ? material.clone() : material;
+    return createIIPreviewMaterial(material, {noExport: true});
 }
 
 function clearThreeChildren(object) {
     while (object.children.length) {
-        object.remove(object.children[0]);
+        const child = object.children[object.children.length - 1];
+        object.remove(child);
+        child.traverse(node => {
+            node.geometry?.dispose?.();
+            if (Array.isArray(node.material)) node.material.forEach(material => material?.dispose?.());
+            else node.material?.dispose?.();
+        });
     }
 }
 
@@ -78,6 +95,9 @@ class EmbeddedMesh extends OutlinerElement {
         super(data, uuid);
         resetElementProperties(this, EmbeddedMesh);
         this.name = 'embedded_mesh';
+        this.children = [];
+        this.selected = false;
+        this.isOpen = false;
         this.locked = true;
         this.export = true;
         this.parent = 'root';
@@ -153,6 +173,7 @@ class EmbeddedGroup extends OutlinerElement {
         resetElementProperties(this, EmbeddedGroup);
         this.name = 'embedded_group';
         this.children = [];
+        this.selected = false;
         this.locked = true;
         this.export = true;
         this.parent = 'root';
@@ -229,6 +250,8 @@ export class EmbeddedPart extends OutlinerElement {
             EmbeddedPart.properties[key].reset(this);
         }
         this.name = 'embedded_part';
+        this.children = [];
+        this.selected = false;
         this.locked = false;
         this.export = true;
         this.parent = 'root';
@@ -331,15 +354,17 @@ new NodePreviewController(EmbeddedPart, {
 // Model loading & parsing helpers
 // ----------------------------------------------------------------------
 function clearEmbeddedChildren(part) {
-    const toRemove = part.children.filter(c => c instanceof EmbeddedGroup || c instanceof EmbeddedMesh);
+    const toRemove = (part.children || []).filter(c => c instanceof EmbeddedGroup || c instanceof EmbeddedMesh);
     toRemove.forEach(c => c.remove());
 }
 
 function createEmbeddedElementsFromModel(model, parentElement) {
+    model.updateMatrixWorld(true);
+
     for (const child of model.children) {
         if (child.isMesh) {
             const elem = new EmbeddedMesh({name: child.name || 'embedded_mesh'});
-            elem._geometry = child.geometry.clone();
+            elem._geometry = child.geometry?.clone ? child.geometry.clone() : child.geometry;
             elem._material = cloneMaterial(child.material);
             applyNodeTransform(elem, child);
             elem.init();
@@ -347,6 +372,14 @@ function createEmbeddedElementsFromModel(model, parentElement) {
             EmbeddedMesh.preview_controller.updateTransform(elem);
             EmbeddedMesh.preview_controller.updateGeometry(elem);
         } else if (child.isGroup || child.isObject3D) {
+            // Avoid creating empty wrapper groups for anonymous GLTF scene roots;
+            // import their useful children directly below the requested parent.
+            const anonymousRoot = !child.name || child.name === 'Scene';
+            if (anonymousRoot && parentElement instanceof EmbeddedPart) {
+                createEmbeddedElementsFromModel(child, parentElement);
+                continue;
+            }
+
             const elem = new EmbeddedGroup({name: child.name || 'embedded_group'});
             applyNodeTransform(elem, child);
             elem.init();
@@ -362,21 +395,9 @@ async function loadModelForPart(part) {
     if (!entry) throw new Error('Unknown component');
 
     const url = entry.model;
-    return new Promise((resolve, reject) => {
-        new THREE.GLTFLoader().load(url, (gltf) => {
-            gltf.scene.traverse(node => {
-                if (node.isMesh && node.material) {
-                    const materials = Array.isArray(node.material) ? node.material : [node.material];
-                    materials.forEach(mat => {
-                        mat.roughness = 1.0;
-                        mat.metalness = 0.0;
-                        mat.emissive = new THREE.Color(0x7f7f7f);
-                        mat.emissiveIntensity = 0.125 * 3;
-                    });
-                }
-            });
-            resolve(gltf.scene);
-        }, undefined, reject);
+    return loadIIGLBModel(url, {
+        cacheKey: 'warehouse:' + url,
+        noExport: true
     });
 }
 

@@ -1,4 +1,5 @@
 import '../GLTFLoader';
+import { loadIIGLBModel } from '../utils';
 
 const ASSET_BASE = 'https://assets.iiteam.net/model/bullet/';
 
@@ -33,49 +34,17 @@ const fileMap = {
 
 // Model cache to avoid reloading same file
 async function loadModel(type) {
+    if (!fileMap[type]) return null;
 
-    if (modelCache.has(type)) {
-        console.log("Loading cached: " + type)
-        return modelCache.get(type).clone();
+    if (!modelCache.has(type)) {
+        modelCache.set(type, loadIIGLBModel(ASSET_BASE + type, {
+            cacheKey: 'bullet:' + type,
+            noExport: true
+        }));
     }
 
-    console.log("Loading: " + type)
-    if (!fileMap[type])
-        return null;
-
-    const url = ASSET_BASE + type;
-
-    return new Promise((resolve, reject) => {
-        new THREE.GLTFLoader().load(url,
-            (gltf) => {
-                const model = gltf.scene;
-                model.traverse(node => {
-                    if (node.isMesh && node.material) {
-                        console.log("model node:")
-                        console.log(node)
-                        node.receiveShadow = true;
-                        const materials = Array.isArray(node.material) ? node.material : [node.material];
-                        materials.forEach(mat => {
-                            console.log("model material: ");
-                            console.log(mat);
-
-                            const originalMap = mat.map;
-                            mat.roughness = 1.0;
-                            mat.metalness = 0.0;
-                            //Slight self-illumination
-                            mat.emissive = new THREE.Color(0x7f7f7f);
-                            mat.emissiveIntensity = 0.125 * 3;
-                        });
-                    }
-                });
-
-                modelCache.set(type, model.clone(true));
-                resolve(model);
-            },
-            undefined,
-            reject
-        );
-    });
+    const model = await modelCache.get(type);
+    return model.clone(true);
 }
 
 // Scan model for part groups and return mapping

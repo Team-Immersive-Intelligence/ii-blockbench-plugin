@@ -1,4 +1,3 @@
-import '../GLTFLoader';
 import {
     attachPreviewObject,
     createPreviewObject3D,
@@ -8,6 +7,7 @@ import {
     resetElementProperties,
     setPreviewVisibility
 } from './common';
+import { createIIPreviewMaterial, loadIIGLBModel, normalizeIIPreviewTexture } from '../utils';
 
 const HANS_ASSET_BASE = 'https://assets.iiteam.net/model/hans/';
 const SKIN_SIZE = 64;
@@ -283,24 +283,6 @@ function getPartKindFromModelName(value) {
         .find(kind => key.endsWith('_' + kind)) || null;
 }
 
-function installHansMaterialFormatPatch() {
-    const materialPrototype = THREE?.Material?.prototype;
-    if (!materialPrototype || materialPrototype._iiHansFormatPatchInstalled) return;
-
-    const originalSetValues = materialPrototype.setValues;
-    if (typeof originalSetValues !== 'function') return;
-
-    materialPrototype.setValues = function(values) {
-        if (values && Object.prototype.hasOwnProperty.call(values, 'format')) {
-            values = Object.assign({}, values);
-            delete values.format;
-        }
-        return originalSetValues.call(this, values);
-    };
-    materialPrototype._iiHansFormatPatchInstalled = true;
-}
-
-
 function uvCorner(x, y) {
     // The internal THREE texture is used without flipY, so skin-space V can be used directly.
     // Previous code inverted this value, which made the Minecraft skin appear upside-down.
@@ -385,26 +367,7 @@ function loadPresetTexture(presetKey) {
 }
 
 function applyHansTextureSettings(texture) {
-    if (!texture) return null;
-
-    // Generated Hans textures serialise with LinearEncoding (3000) in Blockbench,
-    // while GLTFLoader marks imported base-colour textures as sRGBEncoding (3001).
-    // In Blockbench's preview renderer that mismatch makes the accessory textures
-    // noticeably darker than the generated cuboid body, even when material settings
-    // otherwise match. Normalise all Hans preview textures to the same path.
-    texture.magFilter = THREE.NearestFilter;
-    texture.minFilter = THREE.NearestFilter;
-    texture.flipY = false;
-
-    if (THREE.LinearEncoding !== undefined) {
-        texture.encoding = THREE.LinearEncoding;
-    }
-    if ('colorSpace' in texture) {
-        texture.colorSpace = THREE.LinearSRGBColorSpace || THREE.NoColorSpace || texture.colorSpace;
-    }
-
-    texture.needsUpdate = true;
-    return texture;
+    return normalizeIIPreviewTexture(texture);
 }
 
 function preparePresetTexture(texture) {
@@ -412,69 +375,25 @@ function preparePresetTexture(texture) {
 }
 
 function makeHansPreviewMaterial(options = {}) {
-    const material = new THREE.MeshStandardMaterial({
+    return createIIPreviewMaterial({}, {
         name: options.name || 'hans_preview_material',
         map: options.map || null,
         color: options.color || new THREE.Color(0xffffff),
-        roughness: 1,
-        metalness: 0,
         transparent: !!options.transparent,
         opacity: options.opacity !== undefined ? options.opacity : 1,
         alphaTest: options.alphaTest || 0,
         side: options.side !== undefined ? options.side : THREE.FrontSide,
-        vertexColors: THREE.NoColors
+        noExport: true
     });
-    if (material.map) material.map.needsUpdate = true;
-    material.no_export = true;
-    return material;
-}
-
-function makeBrightPresetMaterial(material) {
-    if (!material) return material;
-    if ('format' in material) delete material.format;
-
-    // The accessory GLB should use the same lit preview material family as the generated Hans body.
-    // GLTF PBR extras such as metalness, AO, normal maps, vertex colours or stale format fields can
-    // make small preview accessories appear almost black in Blockbench's scene lighting, so keep only
-    // the colour/texture identity and rebuild the rest with Hans' stable preview settings.
-    const map = preparePresetTexture(material.map || material.emissiveMap || null);
-    const color = material.color?.clone ? material.color.clone() : new THREE.Color(0xffffff);
-    const previewMaterial = makeHansPreviewMaterial({
-        name: material.name || 'hans_preset_material',
-        map,
-        color,
-        transparent: material.transparent || (material.opacity !== undefined && material.opacity < 1),
-        opacity: material.opacity !== undefined ? material.opacity : 1,
-        alphaTest: material.alphaTest || 0,
-        side: material.side !== undefined ? material.side : THREE.FrontSide
-    });
-
-    // Match the generated Hans body material as closely as possible. Do not carry
-    // GLTF-specific shading channels across; they are useful in a full PBR viewer,
-    // but they make tiny preview accessories render too dark in Blockbench.
-    previewMaterial.aoMap = null;
-    previewMaterial.lightMap = null;
-    previewMaterial.normalMap = null;
-    previewMaterial.bumpMap = null;
-    previewMaterial.roughnessMap = null;
-    previewMaterial.metalnessMap = null;
-    previewMaterial.envMap = null;
-    previewMaterial.vertexColors = THREE.NoColors;
-    previewMaterial.needsUpdate = true;
-    return previewMaterial;
 }
 
 function preparePresetModel(model) {
+    if (!model) return model;
     model.traverse(node => {
+        node.no_export = true;
         if (node.isMesh) {
             node.castShadow = true;
             node.receiveShadow = true;
-            node.no_export = true;
-            if (Array.isArray(node.material)) {
-                node.material = node.material.map(material => makeBrightPresetMaterial(material));
-            } else if (node.material) {
-                node.material = makeBrightPresetMaterial(node.material);
-            }
         }
     });
     return model;
@@ -496,20 +415,13 @@ function loadPresetModel(presetKey) {
     if (!preset.model) return Promise.resolve(null);
     if (presetModelCache.has(presetKey)) return presetModelCache.get(presetKey);
 
-    const promise = new Promise(resolve => {
-        installHansMaterialFormatPatch();
-        new THREE.GLTFLoader().load(
-            HANS_ASSET_BASE + preset.model,
-            gltf => {
-                const scene = preparePresetModel(gltf.scene);
-                resolve(extractPresetParts(scene));
-            },
-            undefined,
-            error => {
-                console.warn(`Failed to load Hans preset model "${preset.model}":`, error);
-                resolve(null);
-            }
-        );
+    const promise = loadIIGLBModel(HANS_ASSET_BASE + preset.model, {
+        cacheKey: 'hans:' + preset.model,
+        noExport: true,
+        clone: true
+    }).then(scene => extractPresetParts(preparePresetModel(scene))).catch(error => {
+        console.warn(`Failed to load Hans preset model "${preset.model}":`, error);
+        return null;
     });
 
     presetModelCache.set(presetKey, promise);

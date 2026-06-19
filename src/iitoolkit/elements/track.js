@@ -1,4 +1,4 @@
-import '../GLTFLoader';
+import { loadIIGLBModel } from '../utils';
 
 const ASSET_BASE = 'https://assets.iiteam.net/model/track/';
 const EPSILON = 1e-6;
@@ -1130,32 +1130,18 @@ function refreshTrackChildPreviews(track) {
 // Model loading
 // ----------------------------------------------------------------------
 async function loadSegmentModel(filename) {
-    if (!modelCache.has(filename)) {
-        modelCache.set(filename, new Promise((resolve, reject) => {
-            new THREE.GLTFLoader().load(
-                ASSET_BASE + filename,
-                gltf => {
-                    const model = gltf.scene;
-                    model.traverse(node => {
-                        if (!node.isMesh || !node.material) return;
-                        node.receiveShadow = true;
-                        node.castShadow = true;
-                        const materials = Array.isArray(node.material) ? node.material : [node.material];
-                        materials.forEach(material => {
-                            material.roughness = 1;
-                            material.metalness = 0;
-                            material.emissive = new THREE.Color(0x7f7f7f);
-                            material.emissiveIntensity = 0.375;
-                        });
-                    });
-                    resolve(model);
-                },
-                undefined,
-                reject
-            );
-        }));
+    if (modelCache.has(filename)) {
+        return modelCache.get(filename).clone(true);
     }
-    return modelCache.get(filename);
+
+    const model = await loadIIGLBModel(ASSET_BASE + filename, {
+        cacheKey: 'track:' + filename,
+        noExport: true,
+        castShadow: true,
+        receiveShadow: true
+    });
+    modelCache.set(filename, model.clone(true));
+    return model;
 }
 
 function getSegmentLength(filename, model) {
@@ -1606,7 +1592,7 @@ new NodePreviewController(Track, {
             forceRebuild
         );
         const step = path.totalDistance / path.segmentCount;
-        const progressOffset = clamp01(element.progress) * path.totalDistance;
+        const progressOffset = -clamp01(element.progress) * path.totalDistance;
 
         cache.instances.forEach((instance, index) => {
             const sample = sampleTrackPath(path, index * step + progressOffset);
