@@ -15,6 +15,8 @@ const SKIN_SIZE = 64;
 let deletables = [];
 let registered = false;
 let addHansAction, rebuildHansAction;
+let originalAnimationGetBoneAnimator = null;
+let originalAnimatorPreview = null;
 
 const textureCache = new Map();
 const presetModelCache = new Map();
@@ -506,6 +508,103 @@ function getHansParent(element) {
         parent = parent.parent;
     }
     return null;
+}
+
+function getHansAnimatorClass(element) {
+    if (element instanceof HansPart) return HansPartAnimator;
+    if (element instanceof Hans) return HansAnimator;
+    return null;
+}
+
+function relinkAnimatorKeyframes(animator) {
+    const keyframes = new Set();
+    if (Array.isArray(animator.keyframes)) animator.keyframes.forEach(keyframe => keyframes.add(keyframe));
+    ['position', 'rotation', 'scale'].forEach(channel => {
+        if (Array.isArray(animator[channel])) animator[channel].forEach(keyframe => keyframes.add(keyframe));
+    });
+    keyframes.forEach(keyframe => {
+        keyframe.animator = animator;
+    });
+}
+
+function promoteHansAnimator(animation, element) {
+    const AnimatorClass = getHansAnimatorClass(element);
+    const animator = animation?.animators?.[element?.uuid];
+    if (!AnimatorClass || !animator) return animator || null;
+    if (animator instanceof AnimatorClass) return animator;
+    if (!(animator instanceof BoneAnimator)) return animator;
+
+    Object.setPrototypeOf(animator, AnimatorClass.prototype);
+    animator.type = AnimatorClass.prototype.type;
+    animator.uuid = element.uuid;
+    animator.animation = animation;
+    animator.name = element.name;
+    relinkAnimatorKeyframes(animator);
+    return animator;
+}
+
+function repairHansAnimators(animation) {
+    if (!animation?.animators || typeof OutlinerNode === 'undefined') return;
+    Object.keys(animation.animators).forEach(uuid => {
+        const element = OutlinerNode.uuids[uuid];
+        if (element instanceof Hans || element instanceof HansPart) {
+            promoteHansAnimator(animation, element);
+        }
+    });
+}
+
+function repairAllHansAnimators() {
+    const animations = new Set();
+    if (typeof Animation !== 'undefined' && Array.isArray(Animation.all)) {
+        Animation.all.forEach(animation => animations.add(animation));
+    }
+    if (typeof Animator !== 'undefined' && Array.isArray(Animator.animations)) {
+        Animator.animations.forEach(animation => animations.add(animation));
+    }
+    if (typeof Animation !== 'undefined' && Animation.selected) animations.add(Animation.selected);
+    animations.forEach(repairHansAnimators);
+}
+
+function patchHansAnimationBinding() {
+    if (typeof Animation !== 'undefined'
+        && Animation.prototype
+        && typeof Animation.prototype.getBoneAnimator === 'function'
+        && !originalAnimationGetBoneAnimator) {
+        originalAnimationGetBoneAnimator = Animation.prototype.getBoneAnimator;
+        Animation.prototype.getBoneAnimator = function(element, ...args) {
+            const animator = originalAnimationGetBoneAnimator.call(this, element, ...args);
+            if (element instanceof Hans || element instanceof HansPart) {
+                return promoteHansAnimator(this, element) || animator;
+            }
+            return animator;
+        };
+        deletables.push({
+            delete() {
+                if (originalAnimationGetBoneAnimator && Animation.prototype.getBoneAnimator !== originalAnimationGetBoneAnimator) {
+                    Animation.prototype.getBoneAnimator = originalAnimationGetBoneAnimator;
+                }
+                originalAnimationGetBoneAnimator = null;
+            }
+        });
+    }
+
+    if (typeof Animator !== 'undefined'
+        && typeof Animator.preview === 'function'
+        && !originalAnimatorPreview) {
+        originalAnimatorPreview = Animator.preview;
+        Animator.preview = function(...args) {
+            repairAllHansAnimators();
+            return originalAnimatorPreview.apply(this, args);
+        };
+        deletables.push({
+            delete() {
+                if (originalAnimatorPreview && Animator.preview !== originalAnimatorPreview) {
+                    Animator.preview = originalAnimatorPreview;
+                }
+                originalAnimatorPreview = null;
+            }
+        });
+    }
 }
 
 function selectAnimatorFor(element) {
@@ -1099,6 +1198,10 @@ export class HansAnimator extends BoneAnimator {
         return this.element;
     }
 
+    getGroup() {
+        return this.getElement();
+    }
+
     displayFrame(multiplier = 1) {
         const element = this.getElement();
         if (!element || !element.mesh) return;
@@ -1144,6 +1247,31 @@ function registerHansPreviewCleanupHooks() {
     }, 0);
     ['select_mode', 'unselect_project', 'new_project'].forEach(eventName => {
         const hook = Blockbench.on(eventName, scheduleReset);
+        if (hook && typeof hook.delete === 'function') deletables.push(hook);
+    });
+}
+
+function registerHansAnimationRepairHooks() {
+    patchHansAnimationBinding();
+    repairAllHansAnimators();
+
+    if (typeof Blockbench === 'undefined' || typeof Blockbench.on !== 'function') return;
+    const scheduleRepair = () => setTimeout(() => {
+        repairAllHansAnimators();
+        if (typeof Modes !== 'undefined' && Modes.animate && typeof Animator !== 'undefined' && Animator.preview) {
+            Animator.preview();
+        }
+    }, 0);
+
+    [
+        'select_project',
+        'finish_edit',
+        'paste',
+        'add_keyframe',
+        'update_keyframe',
+        'select_animation'
+    ].forEach(eventName => {
+        const hook = Blockbench.on(eventName, scheduleRepair);
         if (hook && typeof hook.delete === 'function') deletables.push(hook);
     });
 }
@@ -1202,6 +1330,7 @@ export function registerHans() {
 
     BarItems.add_element.side_menu.addAction(addHansAction);
     registerHansPreviewCleanupHooks();
+    registerHansAnimationRepairHooks();
 
     window.Hans = Hans;
     window.HansPart = HansPart;

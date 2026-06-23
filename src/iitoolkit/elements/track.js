@@ -5,6 +5,8 @@ const EPSILON = 1e-6;
 const TWO_PI = Math.PI * 2;
 const MAX_ARC_STEP = Math.PI / 12;
 const MAX_CONTACT_ARC = Math.PI + 1e-4;
+const TRACK_WHEEL_ROTATION_CHANNEL = 'wheel_rotation';
+const LEGACY_TRACK_WHEEL_ROTATION_CHANNEL = 'rotation';
 
 let deletables = [];
 let registered = false;
@@ -765,7 +767,7 @@ new Property(TrackWheel, 'number', 'wheelRotation', {
             input: {label: 'Rotation', type: 'number', step: 1},
             onChange() {
                 TrackWheel.selected.forEach(element => {
-                    keyframeScalarProperty(element, 'rotation', element.wheelRotation);
+                    keyframeScalarProperty(element, TRACK_WHEEL_ROTATION_CHANNEL, element.wheelRotation);
                     applyWheelRotation(element);
                 });
             }
@@ -1642,26 +1644,32 @@ function registerScalarKeyframeProperties() {
     }
     if (!KeyframeDataPoint.properties.ii_track_rotation) {
         scalarKeyframeProperties.push(new Property(KeyframeDataPoint, 'molang', 'ii_track_rotation', {
-            label: 'Rotation',
+            label: 'Wheel Rotation',
             default: '0',
-            condition: point => point.keyframe.channel === 'rotation'
+            condition: point => point.keyframe.channel === TRACK_WHEEL_ROTATION_CHANNEL
+                || (point.keyframe.animator instanceof TrackWheelAnimator
+                    && point.keyframe.channel === LEGACY_TRACK_WHEEL_ROTATION_CHANNEL)
         }));
     }
 }
 
+function isWheelRotationChannel(channel) {
+    return channel === TRACK_WHEEL_ROTATION_CHANNEL || channel === LEGACY_TRACK_WHEEL_ROTATION_CHANNEL;
+}
+
 function getScalarPropertyName(channel) {
     if (channel === 'compression') return 'ii_track_compression';
-    if (channel === 'rotation') return 'ii_track_rotation';
+    if (isWheelRotationChannel(channel)) return 'ii_track_rotation';
     return 'ii_track_progress';
 }
 
 function normaliseScalarValue(channel, value) {
     const number = Number(value) || 0;
-    return channel === 'rotation' ? number : clamp01(number);
+    return isWheelRotationChannel(channel) ? number : clamp01(number);
 }
 
 function getElementScalarValue(element, channel) {
-    return channel === 'rotation' ? (Number(element?.wheelRotation) || 0) : (Number(element?.[channel]) || 0);
+    return isWheelRotationChannel(channel) ? (Number(element?.wheelRotation) || 0) : (Number(element?.[channel]) || 0);
 }
 
 function keyframeScalarProperty(element, channel, value) {
@@ -1718,8 +1726,9 @@ class ScalarElementAnimator extends GeneralAnimator {
         GeneralAnimator.prototype.select.call(this);
 
         const channel = this.constructor.scalarChannel;
-        if (this[channel] && (Timeline.selected.length === 0 || Timeline.selected[0].animator !== this)) {
-            const nearest = this[channel].find(keyframe => Math.abs(keyframe.time - Timeline.time) < 0.002);
+        const keyframes = this.getScalarKeyframes(channel);
+        if (keyframes.length && (Timeline.selected.length === 0 || Timeline.selected[0].animator !== this)) {
+            const nearest = keyframes.find(keyframe => Math.abs(keyframe.time - Timeline.time) < 0.002);
             if (nearest) nearest.select();
         }
         if (this.element.parent && this.element.parent !== 'root') this.element.parent.openUp();
@@ -1728,6 +1737,14 @@ class ScalarElementAnimator extends GeneralAnimator {
 
     doRender() {
         return this.getElement() && this.element.mesh;
+    }
+
+    getScalarKeyframes(channel) {
+        const keyframes = Array.isArray(this[channel]) ? this[channel] : [];
+        if (channel === TRACK_WHEEL_ROTATION_CHANNEL && Array.isArray(this[LEGACY_TRACK_WHEEL_ROTATION_CHANNEL])) {
+            return keyframes.concat(this[LEGACY_TRACK_WHEEL_ROTATION_CHANNEL]);
+        }
+        return keyframes;
     }
 
     displayFrame() {
@@ -1739,7 +1756,7 @@ class ScalarElementAnimator extends GeneralAnimator {
 
     interpolate(channel) {
         if (channel !== this.constructor.scalarChannel) return 0;
-        const keyframes = this[channel];
+        const keyframes = this.getScalarKeyframes(channel);
         if (!keyframes.length) return getElementScalarValue(this.getElement(), channel);
 
         const time = this.animation.time;
@@ -1846,7 +1863,7 @@ TrackSuspenderAnimator.prototype.channels = {
 TrackSuspender.animator = TrackSuspenderAnimator;
 
 export class TrackWheelAnimator extends ScalarElementAnimator {}
-TrackWheelAnimator.scalarChannel = 'rotation';
+TrackWheelAnimator.scalarChannel = TRACK_WHEEL_ROTATION_CHANNEL;
 TrackWheelAnimator.displayName = 'Track Wheel';
 TrackWheelAnimator.applyValue = (element, value) => {
     element.wheelRotation = value;
@@ -1854,7 +1871,7 @@ TrackWheelAnimator.applyValue = (element, value) => {
 };
 TrackWheelAnimator.prototype.type = 'track_wheel';
 TrackWheelAnimator.prototype.channels = {
-    rotation: {name: 'Rotation', mutable: true, transform: false, max_data_points: 1}
+    [TRACK_WHEEL_ROTATION_CHANNEL]: {name: 'Wheel Rotation', mutable: true, transform: false, max_data_points: 1}
 };
 TrackWheel.animator = TrackWheelAnimator;
 
