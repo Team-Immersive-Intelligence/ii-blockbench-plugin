@@ -615,7 +615,7 @@ function selectAnimatorFor(element) {
 
 function applyPivotedTransform(element, object, fallbackToModel = true, animatedPosition = null, animatedRotation = null) {
     object.rotation.order = Format.euler_order || 'ZYX';
-    object.position.fromArray(vec3Sum(element.origin, animatedPosition || element.position));
+    object.position.fromArray(getTransformPosition(element, animatedPosition || element.position));
     object.rotation.setFromDegreeArray(animatedRotation || element.rotation || [0, 0, 0]);
     object.scale.set(1, 1, 1);
     attachPreviewObject(element, object, fallbackToModel);
@@ -647,6 +647,39 @@ function vectorFromInterpolation(value, fallback) {
     return fallback.slice();
 }
 
+function toVec3(value, fallback = [0, 0, 0]) {
+    return vectorFromInterpolation(value, fallback);
+}
+
+function getTransformPosition(element, position = null) {
+    const localPosition = toVec3(position || element.position, [0, 0, 0]);
+    return element instanceof Hans ? localPosition : vec3Sum(element.origin, localPosition);
+}
+
+function setTransformPositionAxis(element, axis, value) {
+    if (element instanceof Hans) {
+        element.position[axis] = value;
+    } else {
+        element.position[axis] = value - (element.origin?.[axis] || 0);
+    }
+}
+
+function refreshHansStaticPoseMemory(element) {
+    if (!element?._hansStaticPose) return;
+    if (!(element instanceof Hans)) element._hansStaticPose.origin = cloneArray(element.origin || [0, 0, 0]);
+    element._hansStaticPose.position = cloneArray(element.position || [0, 0, 0]);
+    element._hansStaticPose.rotation = cloneArray(element.rotation || [0, 0, 0]);
+}
+
+function updateHansPartDefaultPosePreview() {
+    HansPart.selected.forEach(refreshHansStaticPoseMemory);
+    if (typeof Modes !== 'undefined' && Modes.animate && typeof Animator !== 'undefined' && Animator.preview) {
+        Animator.preview();
+    } else {
+        HansPart.selected.forEach(part => HansPart.preview_controller.updateTransform(part));
+    }
+}
+
 function rememberHansStaticPose(element) {
     if (!element || element._hansStaticPose) return element?._hansStaticPose || null;
     element._hansStaticPose = {
@@ -660,7 +693,7 @@ function rememberHansStaticPose(element) {
 function restoreHansStaticPose(element) {
     const pose = element?._hansStaticPose;
     if (!element || !pose) return false;
-    element.origin = cloneArray(pose.origin);
+    if (!(element instanceof Hans)) element.origin = cloneArray(pose.origin);
     element.position = cloneArray(pose.position);
     element.rotation = cloneArray(pose.rotation);
     delete element._hansStaticPose;
@@ -721,9 +754,20 @@ export class Hans extends OutlinerElement {
         else if (typeof data === 'string') this.name = data;
     }
 
+    get origin() {
+        return this.position || [0, 0, 0];
+    }
+
+    set origin(value) {
+        this.position = toVec3(value, this.position || [0, 0, 0]);
+    }
+
     extend(object) {
         const oldName = this.name;
+        const legacyOrigin = Array.isArray(object?.origin) ? object.origin.slice() : null;
+        const legacyPosition = Array.isArray(object?.position) ? object.position.slice() : null;
         mergeElementProperties(this, Hans, object);
+        if (legacyOrigin) this.position = vec3Sum(legacyOrigin, legacyPosition || [0, 0, 0]);
         if (!HANS_PRESETS[this.preset]) this.preset = 'default';
         if (oldName !== this.name) this.syncPartNames();
         return this;
@@ -772,9 +816,9 @@ export class Hans extends OutlinerElement {
     }
 
     flip(axis, center) {
-        const base = vec3Sum(this.origin, this.position);
+        const base = getTransformPosition(this);
         const offset = base[axis] - center;
-        this.position[axis] = center - offset - (this.origin?.[axis] || 0);
+        setTransformPositionAxis(this, axis, center - offset);
         this.rotation.forEach((value, index) => {
             if (index !== axis) this.rotation[index] = -value;
         });
@@ -905,8 +949,17 @@ new Property(Hans, 'string', 'name', {
         }
     }
 });
-new Property(Hans, 'vector', 'origin', {default: [0, 0, 0]});
-new Property(Hans, 'vector', 'position', {default: [0, 0, 0]});
+new Property(Hans, 'vector', 'position', {
+    default: [0, 0, 0],
+    inputs: {
+        element_panel: {
+            input: {label: 'Position', type: 'vector'},
+            onChange() {
+                Hans.selected.forEach(hans => Hans.preview_controller.updateTransform(hans));
+            }
+        }
+    }
+});
 new Property(Hans, 'vector', 'rotation');
 new Property(Hans, 'string', 'preset', {
     default: 'default',
@@ -1029,9 +1082,9 @@ export class HansPart extends OutlinerElement {
     }
 
     flip(axis, center) {
-        const base = vec3Sum(this.origin, this.position);
+        const base = getTransformPosition(this);
         const offset = base[axis] - center;
-        this.position[axis] = center - offset - (this.origin?.[axis] || 0);
+        setTransformPositionAxis(this, axis, center - offset);
         this.rotation.forEach((value, index) => {
             if (index !== axis) this.rotation[index] = -value;
         });
@@ -1108,8 +1161,24 @@ new Property(HansPart, 'string', 'partKind', {
     }
 });
 new Property(HansPart, 'vector', 'origin', {default: [0, 0, 0]});
-new Property(HansPart, 'vector', 'position', {default: [0, 0, 0]});
-new Property(HansPart, 'vector', 'rotation');
+new Property(HansPart, 'vector', 'position', {
+    default: [0, 0, 0],
+    inputs: {
+        element_panel: {
+            input: {label: 'Default Translation', type: 'vector'},
+            onChange: updateHansPartDefaultPosePreview
+        }
+    }
+});
+new Property(HansPart, 'vector', 'rotation', {
+    default: [0, 0, 0],
+    inputs: {
+        element_panel: {
+            input: {label: 'Default Rotation', type: 'vector'},
+            onChange: updateHansPartDefaultPosePreview
+        }
+    }
+});
 new Property(HansPart, 'boolean', 'visibility', {default: true});
 
 new NodePreviewController(HansPart, {

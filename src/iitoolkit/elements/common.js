@@ -62,7 +62,8 @@ export function createPreviewObject3D(element, options = {}) {
 
 export function attachPreviewObject(element, object, fallbackToModel = true) {
     if (element.parent instanceof OutlinerNode) {
-        element.parent.scene_object.add(object);
+        const parentObject = element.parent.scene_object || element.parent.mesh;
+        if (parentObject && object.parent !== parentObject) parentObject.add(object);
     } else if (fallbackToModel) {
         if (object.parent !== Project.model_3d) {
             Project.model_3d.add(object);
