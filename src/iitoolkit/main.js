@@ -10,6 +10,8 @@ import {
     exportAMTModel,
     exportOBJStaticAction,
     exportOBJDynamicAction,
+    configureOBJCollectionExportAction,
+    registerOBJExporterCollectionMenu,
     objCodec,
     objIECodec
 } from "./codec/obj_exporter";
@@ -55,6 +57,7 @@ const plugin = BBPlugin.register('iitoolkit', {
 
         MenuBar.menus.file.addAction(exportOBJStaticAction, "export.1");
         MenuBar.menus.file.addAction(exportOBJDynamicAction, "export.1");
+        registerOBJExporterCollectionMenu();
 
         let hook = Blockbench.on("quick_save_model", () => {
             for (let collection of Collection.all) {
@@ -88,4 +91,5 @@ function unregisterAll()
     ungroup.delete();
     exportOBJStaticAction.delete();
     exportOBJDynamicAction.delete();
+    configureOBJCollectionExportAction.delete();
 }

@@ -1260,11 +1260,11 @@ function calculateExternalTangent(first, second, side) {
     const radiusDifference = first.radius - second.radius;
     const tangentSquared = distanceSquared - radiusDifference * radiusDifference;
 
-    if (distanceSquared <= EPSILON || tangentSquared <= EPSILON) {
+    if (distanceSquared <= EPSILON || tangentSquared < -EPSILON) {
         return {valid: false, spanLength: 0};
     }
 
-    const tangentLength = Math.sqrt(tangentSquared);
+    const tangentLength = Math.sqrt(Math.max(0, tangentSquared));
     const normalX = (dx * radiusDifference - dy * tangentLength * side) / distanceSquared;
     const normalY = (dy * radiusDifference + dx * tangentLength * side) / distanceSquared;
 
@@ -1321,7 +1321,7 @@ function solveTrackEnvelope(track, sourceNodes) {
             calculateExternalTangent(node, nodes[(index + 1) % nodes.length], tangentSide)
         );
 
-        const invalidEdge = tangents.findIndex(tangent => !tangent.valid || tangent.spanLength <= EPSILON);
+        const invalidEdge = tangents.findIndex(tangent => !tangent.valid || (nodes.length > 2 && tangent.spanLength <= EPSILON));
         if (invalidEdge >= 0) {
             if (nodes.length <= 2) return null;
             nodes.splice(chooseDegenerateNode(nodes, invalidEdge), 1);
@@ -1331,40 +1331,43 @@ function solveTrackEnvelope(track, sourceNodes) {
 
         let rejectedWheel = -1;
         let rejectedSweep = MAX_CONTACT_ARC;
-        for (let index = 0; index < nodes.length; index++) {
-            const node = nodes[index];
-            if (node.radius <= EPSILON) continue;
-            const incoming = tangents[(index - 1 + nodes.length) % nodes.length].end;
-            const outgoing = tangents[index].start;
-            const {delta} = getWheelArcDelta(node, incoming, outgoing, winding);
-            const sweep = Math.abs(delta);
-            // A wheel demanding more than half a turn is inside the current envelope. Select
-            // the worst offender rather than the first one: neighbouring sprockets can also be
-            // pulled slightly over PI by the bad idler, but the idler has the largest sweep.
-            if (sweep > rejectedSweep && (index !== 0 || rejectedWheel < 0)) {
-                rejectedWheel = index;
-                rejectedSweep = sweep;
-            }
-        }
-        // Preserve the declared front wheel when another invalid wheel can be removed instead.
-        if (rejectedWheel === 0) {
-            for (let index = 1; index < nodes.length; index++) {
+        if (nodes.length > 2) {
+            for (let index = 0; index < nodes.length; index++) {
                 const node = nodes[index];
                 if (node.radius <= EPSILON) continue;
                 const incoming = tangents[(index - 1 + nodes.length) % nodes.length].end;
                 const outgoing = tangents[index].start;
-                const sweep = Math.abs(getWheelArcDelta(node, incoming, outgoing, winding).delta);
-                if (sweep > MAX_CONTACT_ARC && sweep >= rejectedSweep - 1e-4) {
+                const {delta} = getWheelArcDelta(node, incoming, outgoing, winding);
+                const sweep = Math.abs(delta);
+                // A wheel demanding more than half a turn is inside the current envelope. Select
+                // the worst offender rather than the first one: neighbouring sprockets can also be
+                // pulled slightly over PI by the bad idler, but the idler has the largest sweep.
+                // Two-wheel belts are the exception: different radii can legitimately make one
+                // wheel wrap more than 180 degrees.
+                if (sweep > rejectedSweep && (index !== 0 || rejectedWheel < 0)) {
                     rejectedWheel = index;
                     rejectedSweep = sweep;
                 }
             }
-        }
-        if (rejectedWheel >= 0) {
-            if (nodes.length <= 2) return null;
-            nodes.splice(rejectedWheel, 1);
-            nodes = canonicaliseWheelOrder(track, nodes);
-            continue;
+            // Preserve the declared front wheel when another invalid wheel can be removed instead.
+            if (rejectedWheel === 0) {
+                for (let index = 1; index < nodes.length; index++) {
+                    const node = nodes[index];
+                    if (node.radius <= EPSILON) continue;
+                    const incoming = tangents[(index - 1 + nodes.length) % nodes.length].end;
+                    const outgoing = tangents[index].start;
+                    const sweep = Math.abs(getWheelArcDelta(node, incoming, outgoing, winding).delta);
+                    if (sweep > MAX_CONTACT_ARC && sweep >= rejectedSweep - 1e-4) {
+                        rejectedWheel = index;
+                        rejectedSweep = sweep;
+                    }
+                }
+            }
+            if (rejectedWheel >= 0) {
+                nodes.splice(rejectedWheel, 1);
+                nodes = canonicaliseWheelOrder(track, nodes);
+                continue;
+            }
         }
 
         return {nodes, tangents, winding};
@@ -1381,9 +1384,9 @@ function addPathPoint(path, point) {
     path.push(point);
 }
 
-function appendWheelArc(path, node, incoming, outgoing, winding, direction, segmentLength) {
+function appendWheelArc(path, node, incoming, outgoing, winding, direction, segmentLength, maxContactArc = MAX_CONTACT_ARC) {
     const {startAngle, delta} = getWheelArcDelta(node, incoming, outgoing, winding);
-    if (Math.abs(delta) <= EPSILON || Math.abs(delta) > MAX_CONTACT_ARC) return;
+    if (Math.abs(delta) <= EPSILON || Math.abs(delta) > maxContactArc) return;
 
     const preferredStepLength = Math.max(segmentLength * 0.5, 1 / 64);
     const byAngle = Math.ceil(Math.abs(delta) / MAX_ARC_STEP);
@@ -1426,7 +1429,7 @@ function buildTrackPath(track, segmentLength) {
 
         const incoming = tangents[(index - 1 + nodes.length) % nodes.length].end;
         const outgoing = tangents[index].start;
-        appendWheelArc(points, node, incoming, outgoing, winding, direction, segmentLength);
+        appendWheelArc(points, node, incoming, outgoing, winding, direction, segmentLength, nodes.length <= 2 ? TWO_PI + EPSILON : MAX_CONTACT_ARC);
     });
 
     if (points.length > 2 && points[0].position.distanceToSquared(points[points.length - 1].position) <= EPSILON * EPSILON) {
