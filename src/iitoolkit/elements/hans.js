@@ -1,5 +1,6 @@
 import {
     attachPreviewObject,
+    bindOutlinerAnimator,
     createPreviewObject3D,
     makeChildlessCopy,
     makeSaveCopy,
@@ -527,18 +528,25 @@ function relinkAnimatorKeyframes(animator) {
     });
 }
 
+function bindHansAnimator(animator, animation, element) {
+    bindOutlinerAnimator(animator, element, animation);
+    return animator;
+}
+
 function promoteHansAnimator(animation, element) {
     const AnimatorClass = getHansAnimatorClass(element);
     const animator = animation?.animators?.[element?.uuid];
     if (!AnimatorClass || !animator) return animator || null;
-    if (animator instanceof AnimatorClass) return animator;
+    if (animator instanceof AnimatorClass) {
+        bindHansAnimator(animator, animation, element);
+        relinkAnimatorKeyframes(animator);
+        return animator;
+    }
     if (!(animator instanceof BoneAnimator)) return animator;
 
     Object.setPrototypeOf(animator, AnimatorClass.prototype);
     animator.type = AnimatorClass.prototype.type;
-    animator.uuid = element.uuid;
-    animator.animation = animation;
-    animator.name = element.name;
+    bindHansAnimator(animator, animation, element);
     relinkAnimatorKeyframes(animator);
     return animator;
 }
@@ -1262,13 +1270,22 @@ new NodePreviewController(HansPart, {
 // pivoted preview transform so Animate mode shows the same local offsets that the
 // AMT biped adapter will later consume.
 export class HansAnimator extends BoneAnimator {
+    constructor(uuid, animation) {
+        super(uuid, animation);
+        bindHansAnimator(this, animation, OutlinerNode.uuids[uuid]);
+    }
+
     getElement() {
-        this.element = OutlinerNode.uuids[this.uuid];
-        return this.element;
+        return bindOutlinerAnimator(this);
     }
 
     getGroup() {
         return this.getElement();
+    }
+
+    select(...args) {
+        if (!bindOutlinerAnimator(this)) return this;
+        return super.select(...args);
     }
 
     displayFrame(multiplier = 1) {

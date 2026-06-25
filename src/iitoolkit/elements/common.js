@@ -1,3 +1,4 @@
+/* global THREE, OutlinerNode */
 // Shared helpers for IIToolkit custom Outliner elements.
 // These keep the custom preview nodes closer to Blockbench's native element contract:
 // Project.nodes_3d is keyed by UUID, and the THREE object name should also be the element UUID.
@@ -116,4 +117,110 @@ export function getParentSceneObject(element) {
 
 export function safeObjName(name, fallback = 'object') {
     return String(name || fallback).replace(/\s+/g, '_').replace(/[^A-Za-z0-9_.:-]/g, '_');
+}
+
+
+export function numberOr(value, fallback) {
+    const parsed = typeof value === 'string' ? parseFloat(value) : value;
+    return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+export function vectorFromInterpolation(value, fallback) {
+    if (value === false || value === undefined || value === null) return fallback.slice();
+    if (Array.isArray(value)) {
+        return [
+            numberOr(value[0], fallback[0]),
+            numberOr(value[1], fallback[1]),
+            numberOr(value[2], fallback[2])
+        ];
+    }
+    if (typeof value === 'object') {
+        return [
+            numberOr(value.x, fallback[0]),
+            numberOr(value.y, fallback[1]),
+            numberOr(value.z, fallback[2])
+        ];
+    }
+    return fallback.slice();
+}
+
+export function applyAMTAnimatedTransform(element, animatedPosition = null, animatedRotation = null, animatedScale = null) {
+    if (!element || !element.mesh) return;
+    const object = element.mesh;
+    const position = vectorFromInterpolation(animatedPosition, element.position || [0, 0, 0]);
+    const rotation = vectorFromInterpolation(animatedRotation, element.rotation || [0, 0, 0]);
+    const scale = vectorFromInterpolation(animatedScale, element.scale || [1, 1, 1]);
+
+    object.position.fromArray(position);
+    object.rotation.setFromDegreeArray(rotation);
+    object.scale.fromArray(scale);
+    object.updateMatrixWorld(true);
+}
+
+export function bindOutlinerAnimator(animator, element = null, animation = null) {
+    const resolvedByUuid = animator.uuid ? OutlinerNode.uuids[animator.uuid] : null;
+    const resolved = element || resolvedByUuid || animator.element || animator.group;
+    if (resolved) {
+        animator.uuid = resolved.uuid;
+        animator.element = resolved;
+        animator.group = resolved;
+        animator.name = resolved.name;
+    }
+    if (animation) animator.animation = animation;
+    if (!animator.muted || typeof animator.muted !== 'object') animator.muted = {};
+    ['position', 'rotation', 'scale'].forEach(channel => {
+        if (!Array.isArray(animator[channel])) animator[channel] = [];
+    });
+    return resolved || null;
+}
+
+export class AMTTransformAnimator extends BoneAnimator {
+    constructor(uuid, animation) {
+        super(uuid, animation);
+        bindOutlinerAnimator(this, null, animation);
+    }
+
+    getElement() {
+        return bindOutlinerAnimator(this);
+    }
+
+    getGroup() {
+        return this.getElement();
+    }
+
+    select(...args) {
+        if (!bindOutlinerAnimator(this)) return this;
+        return super.select(...args);
+    }
+
+    doRender() {
+        const element = this.getElement();
+        return element && element.mesh;
+    }
+
+    displayFrame() {
+        if (!this.doRender()) return;
+        const element = this.getElement();
+        const basePosition = Array.isArray(element.position) ? element.position : [0, 0, 0];
+        const baseRotation = Array.isArray(element.rotation) ? element.rotation : [0, 0, 0];
+        const baseScale = Array.isArray(element.scale) ? element.scale : [1, 1, 1];
+
+        const animatedPosition = this.muted?.position
+            ? basePosition.slice()
+            : vectorFromInterpolation(this.interpolate('position', true), basePosition);
+        const animatedRotation = this.muted?.rotation
+            ? baseRotation.slice()
+            : vectorFromInterpolation(this.interpolate('rotation', true), baseRotation);
+        const animatedScale = this.muted?.scale
+            ? baseScale.slice()
+            : vectorFromInterpolation(this.interpolate('scale', true), baseScale);
+
+        applyAMTAnimatedTransform(element, animatedPosition, animatedRotation, animatedScale);
+    }
+}
+
+export function makeAMTTransformAnimator(type) {
+    class AMTElementAnimator extends AMTTransformAnimator {}
+    AMTElementAnimator.prototype.type = type;
+    return AMTElementAnimator;
 }

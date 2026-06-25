@@ -1,7 +1,12 @@
+/* global Collection, Settings, THREE, autoStringify, Locator, Texture, scene, OutlinerNode, Mesh, Property */
 //-- Export Dialogue --//
 import {getResourceLocation} from '../utils';
 import {Pipe} from '../elements/pipe';
 import {collectVisibleMeshes, safeObjName} from '../elements/common';
+import {getTextElementProperties} from '../elements/text';
+import {getHandElementProperties} from '../elements/hand';
+import {getBannerElementProperties} from '../elements/banner';
+import {getItemElementProperties} from '../elements/item';
 
 const ROUND = 10000;
 const NORMAL_ROUND = 100;
@@ -15,7 +20,7 @@ const DEFAULT_EXPORT_OPTIONS = {
     flip_axis: 'x',
     flip_offset: [0, 0, 0]
 };
-const SPECIAL_AMT_TYPES = ['wire', 'bullet', 'fluid', 'track'];
+const SPECIAL_AMT_TYPES = ['wire', 'bullet', 'fluid', 'track', 'ii_text', 'hand', 'banner', 'item'];
 const COLLECTION_EXPORT_OPTIONS_KEY = 'ii_obj_export_options';
 let collectionExportOptionsPersistenceRegistered = false;
 
@@ -324,10 +329,7 @@ function writeOBJSidecars(writerCodec, path, options = {}) {
     const attachment = options.attachment;
 
     if (settings.obj_mtl) writerCodec.write(compileMaterial(), getMtlPathForObj(path));
-    if (settings.obj_amt) writerCodec.write(autoStringify(compileAMT({
-        attachment,
-        export_settings: settings
-    })), getAmtPathForObj(path));
+    if (settings.obj_amt) writerCodec.write(autoStringify(compileAMT({attachment, export_settings: settings})), getAmtPathForObj(path));
 }
 
 function writeOBJToPath(codec, path, options = {}) {
@@ -335,11 +337,7 @@ function writeOBJToPath(codec, path, options = {}) {
     const attachment = options.attachment;
     const extension = codec === objIECodec ? '.obj.ie' : '.obj';
     const exportPath = ensureObjPath(path, extension);
-    const compileOptions = {
-        attachment,
-        export_settings: settings,
-        mtl_name: stripObjExtension(getPathInfo(exportPath).file) + '.mtl'
-    };
+    const compileOptions = {attachment, export_settings: settings, mtl_name: stripObjExtension(getPathInfo(exportPath).file) + '.mtl'};
 
     if (settings.obj_model !== false) {
         codec.write(codec.compile(compileOptions), exportPath);
@@ -770,16 +768,15 @@ function compileTrackProperties(element) {
 function compileSpecialAMTProperties(element, exportScale, settings) {
     if (!element || element.export === false || element.visibility === false) return null;
     switch (element.type) {
-        case 'wire':
-            return compileWireProperties(element, exportScale, settings);
-        case 'fluid':
-            return compileFluidProperties(element);
-        case 'bullet':
-            return compileBulletProperties(element);
-        case 'track':
-            return compileTrackProperties(element);
-        default:
-            return null;
+        case 'wire': return compileWireProperties(element, exportScale, settings);
+        case 'fluid': return compileFluidProperties(element);
+        case 'bullet': return compileBulletProperties(element);
+        case 'track': return compileTrackProperties(element);
+        case 'ii_text': return getTextElementProperties(element);
+        case 'hand': return getHandElementProperties(element);
+        case 'banner': return getBannerElementProperties(element);
+        case 'item': return getItemElementProperties(element);
+        default: return null;
     }
 }
 
@@ -952,12 +949,7 @@ function compileModel(options = {}) {
 
 function appendThreeMeshObj(compiled, sourceMesh, exportScale, settings, indexVertex, indexVertexUvs, indexNormals, currentMaterial) {
     let geometry = sourceMesh.geometry;
-    if (!geometry || !geometry.attributes || !geometry.attributes.position) return {
-        vertices: 0,
-        uvs: 0,
-        normals: 0,
-        currentMaterial
-    };
+    if (!geometry || !geometry.attributes || !geometry.attributes.position) return {vertices: 0, uvs: 0, normals: 0, currentMaterial};
 
     if (!geometry.attributes.normal) {
         geometry = geometry.clone();
@@ -1026,6 +1018,7 @@ function appendThreeMeshObj(compiled, sourceMesh, exportScale, settings, indexVe
         currentMaterial
     };
 }
+
 
 
 function compileMaterial() {

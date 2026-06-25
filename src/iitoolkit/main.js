@@ -24,6 +24,10 @@ import {registerPipe, unregisterPipeActions} from "./elements/pipe";
 import {registerFluid, unregisterFluidActions} from "./elements/fluid";
 import {registerEmbeddedPart, unregisterEmbeddedPartActions} from "./elements/warehouse";
 import {registerHans, unregisterHansActions} from "./elements/hans";
+import {registerText, unregisterTextActions} from "./elements/text";
+import {registerHand, unregisterHandActions} from "./elements/hand";
+import {registerBanner, unregisterBannerActions} from "./elements/banner";
+import {registerItem, unregisterItemActions} from "./elements/item";
 
 
 var iiBarMenu = null;
@@ -35,7 +39,7 @@ const plugin = BBPlugin.register('iitoolkit', {
     description: 'Utility plugin for Immersive Intelligence mod models. https://github.com/Pabilo8/ImmersiveIntelligence',
     about: 'Go to Animation -> Export AMT...',
     tags: ["Minecraft: Java Edition"],
-    version: '0.4.0',
+    version: '0.6.0',
     min_version: '4.0.0',
     variant: 'both',
     onload() {
@@ -46,9 +50,13 @@ const plugin = BBPlugin.register('iitoolkit', {
         registerWire();
         registerPipe();
         registerFluid();
-        registerEmbeddedPart();
+        //registerEmbeddedPart();
         registerHans();
         registerTrack();
+        registerText();
+        registerHand();
+        registerBanner();
+        registerItem();
 
         iiBarMenu = new BarMenu("iitoolkit", [ungroup, exportAnimationAMT, exportAMTModel, exportAABB], {
             name: 'Immersive Intelligence Toolkit'
@@ -81,9 +89,13 @@ function unregisterAll()
     unregisterWireActions();
     unregisterPipeActions();
     unregisterFluidActions();
-    unregisterEmbeddedPartActions();
+    //unregisterEmbeddedPartActions();
     unregisterHansActions();
     unregisterTrackActions();
+    unregisterTextActions();
+    unregisterHandActions();
+    unregisterBannerActions();
+    unregisterItemActions();
 
     exportAnimationAMT.delete();
     exportAMTModel.delete();
