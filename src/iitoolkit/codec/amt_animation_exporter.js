@@ -1,4 +1,54 @@
+/* global PathModule, Settings, autoStringify */
 export var lastAnimationState = true, exportAnimations = {};
+
+function getSelectedAnimations(animations, formResult) {
+    return animations.filter(animation => formResult["1_" + animation.name.hashCode()]);
+}
+
+function safeAnimationFileName(name) {
+    const safeName = String(name || 'animation')
+        .replace(/[<>:"/\\|?*]/g, '_')
+        .split('')
+        .map(character => character.charCodeAt(0) < 32 ? '_' : character)
+        .join('')
+        .replace(/[. ]+$/g, '');
+    return safeName || 'animation';
+}
+
+function exportAnimationWithDialog(animation) {
+    Blockbench.export({
+        resource_id: 'animation',
+        type: 'AMT JSON Animation',
+        extensions: ['json'],
+        name: animation.name,
+        content: autoStringify(compileAnimation(animation)),
+    });
+}
+
+function exportAnimationsToFolder(animations) {
+    if (!isApp) {
+        Blockbench.showQuickMessage('Batch export is available in the Blockbench desktop app', 'error');
+        return false;
+    }
+    if (!animations.length) {
+        Blockbench.showQuickMessage('Select at least one animation', 'error');
+        return false;
+    }
+
+    const folder = Blockbench.pickDirectory({
+        title: 'Export AMT Animations',
+        resource_id: 'animation',
+        startpath: Project.export_path ? PathModule.dirname(Project.export_path) : undefined
+    });
+    if (!folder) return false;
+
+    animations.forEach(animation => {
+        const path = PathModule.join(folder, safeAnimationFileName(animation.name) + '.json');
+        Blockbench.writeFile(path, {content: autoStringify(compileAnimation(animation))});
+    });
+    Blockbench.showQuickMessage(`Exported ${animations.length} AMT animation${animations.length === 1 ? '' : 's'}`);
+    return true;
+}
 
 export var exportAnimationAMT = new Action('export_animation_amt', {
     name: 'Export AMT Animation...',
@@ -6,7 +56,6 @@ export var exportAnimationAMT = new Action('export_animation_amt', {
     icon: 'movie',
     click: function () {
         const animations = Animation.all.slice()
-        let keys = [];
         let form = {};
         let lines = [];
         if (Format.animation_files) {
@@ -18,8 +67,9 @@ export var exportAnimationAMT = new Action('export_animation_amt', {
             "                display: inline;\n" +
             "                margin: 0;\n" +
             "            }</style>");
-        lines.push("Select animations to be exported as <pre>.json</pre>  AMT Animation files.<br>");
-        lines.push("Select Export AMT to export a <pre>.obj.amt</pre>  metadata file.");
+        lines.push("Select animations to be exported as <pre>.json</pre> AMT Animation files.<br>");
+        lines.push("<b>Export Selected</b> uses the normal save dialog for each checked animation.<br>");
+        lines.push("<b>Export All Selected</b> writes all checked animations to one selected folder.");
         lines.push("<hr>");
 
         //form
@@ -27,11 +77,10 @@ export var exportAnimationAMT = new Action('export_animation_amt', {
 
         animations.forEach(animation => {
             const key = animation.name;
-            keys.push(key);
             form["1_" + key.hashCode()] = {
                 label: " " + key + "",
                 type: 'checkbox',
-                value: "key" in exportAnimations ? exportAnimations[key] : true,
+                value: key in exportAnimations ? exportAnimations[key] : true,
             };
         })
 
@@ -55,32 +104,27 @@ export var exportAnimationAMT = new Action('export_animation_amt', {
                 }
 
             },
+            buttons: ['Export Selected', 'Export All Selected', 'dialog.cancel'],
+            confirmIndex: 0,
+            cancelIndex: 2,
             onConfirm(form_result) {
-
                 dialog.hide();
-                console.log(form_result);
-
-                keys = keys.filter(key => form_result["1_" + key.hashCode()])
-
-                Animator.animations.forEach(function (animation) {
-                    if (keys.includes(animation.name)) {
-                        Blockbench.export({
-                            resource_id: 'animation',
-                            type: 'AMT JSON Animation',
-                            extensions: ['json'],
-                            name: animation.name,
-                            content: autoStringify(compileAnimation(animation)),
-                        });
-
-                    }
-                })
+                getSelectedAnimations(animations, form_result).forEach(exportAnimationWithDialog);
+            },
+            onButton(buttonIndex) {
+                if (buttonIndex !== 1)
+                    return;
+                const selectedAnimations = getSelectedAnimations(animations, dialog.getFormResult());
+                if (exportAnimationsToFolder(selectedAnimations))
+                    dialog.hide();
+                return false;
             }
         })
         dialog.show();
     }
 });
 
-function compileAnimation(animation) {
+export function compileAnimation(animation) {
     const amt_file = {};
     const maxlength = animation.getMaxLength();
 
@@ -109,8 +153,10 @@ function compileAnimation(animation) {
                         const timecodeString = kf.getTimecodeString();
 
                         let arr = kf.getArray();
-                        //rotation X should be flipped
+                        // AMT uses the opposite X rotation and Z translation directions.
                         if (channel === 'rotation')
+                            arr = [-arr[0], arr[1], arr[2]];
+                        else if (channel === 'position')
                             arr = [-arr[0], arr[1], arr[2]];
 
                         keyframe = {

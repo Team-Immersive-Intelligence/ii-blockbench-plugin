@@ -11,6 +11,28 @@ import './GLTFLoader';
 // LinearEncoding. Keep all IIToolkit GLB previews on the same material path.
 const iiGLBModelCache = new Map();
 
+function getIIGLBRequestURL(url, options = {}) {
+    if (options.cacheBust === false || !/^https?:\/\//i.test(url))
+        return url;
+
+    const requestURL = new URL(url);
+    const cacheToken = options.cacheBust || Date.now().toString(36);
+    requestURL.searchParams.set('_ii_cache', cacheToken);
+    return requestURL.toString();
+}
+
+export function clearIIGLBModelCache(cacheKeyPrefix) {
+    if (!cacheKeyPrefix) {
+        iiGLBModelCache.clear();
+        return;
+    }
+
+    for (const cacheKey of iiGLBModelCache.keys()) {
+        if (String(cacheKey).startsWith(cacheKeyPrefix))
+            iiGLBModelCache.delete(cacheKey);
+    }
+}
+
 export function installIIGLBMaterialPatch() {
     const materialPrototype = THREE?.Material?.prototype;
     if (!materialPrototype || materialPrototype._iiToolkitGLBFormatPatchInstalled) return;
@@ -116,22 +138,28 @@ export async function loadIIGLBModel(url, options = {}) {
 
     const cacheKey = options.cacheKey || url;
     if (!iiGLBModelCache.has(cacheKey)) {
-        iiGLBModelCache.set(cacheKey, new Promise((resolve, reject) => {
+        const requestURL = getIIGLBRequestURL(url, options);
+        const loadPromise = new Promise((resolve, reject) => {
             new THREE.GLTFLoader().load(
-                url,
+                requestURL,
                 gltf => {
                     resolve(normalizeIIGLBModel(gltf.scene, options));
                 },
                 undefined,
                 reject
             );
-        }));
+        });
+
+        iiGLBModelCache.set(cacheKey, loadPromise);
+        loadPromise.catch(() => {
+            if (iiGLBModelCache.get(cacheKey) === loadPromise)
+                iiGLBModelCache.delete(cacheKey);
+        });
     }
 
     const model = await iiGLBModelCache.get(cacheKey);
     return options.clone === false ? model : model.clone(true);
 }
-
 
 
 /**

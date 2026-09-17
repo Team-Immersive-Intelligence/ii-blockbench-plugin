@@ -188,8 +188,10 @@ function updateBannerWave(element, progressOverride = null) {
     if (!group) return;
     const modeGroup = group.getObjectByName('banner_mode') || group;
     const progress = progressOverride === null ? element.progress : progressOverride;
+
     modeGroup.rotation.set(0, 0, 0);
-    if (!element.isFlag) modeGroup.rotation.z = Math.PI / 2;
+    if (element.isFlag !== false) modeGroup.rotation.z = Math.PI / 2;
+
     for (let i = 0; i < 4; i++) {
         const segment = modeGroup.getObjectByName(`banner${i}`);
         if (segment) segment.rotation.x = THREE.MathUtils.degToRad(interpolateWave(`banner${i}`, progress));

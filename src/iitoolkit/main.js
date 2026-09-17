@@ -3,7 +3,7 @@ import './utils'
 import './codec/aabb_exporter'
 import './codec/obj_exporter'
 import './codec/amt_animation_exporter'
-import {exportAnimationAMT, compileAnimation} from "./codec/amt_animation_exporter";
+import {exportAnimationAMT} from "./codec/amt_animation_exporter";
 import {exportAABB} from "./codec/aabb_exporter";
 import {ungroup} from "./misc_actions";
 import {
@@ -12,6 +12,7 @@ import {
     exportOBJDynamicAction,
     configureOBJCollectionExportAction,
     registerOBJExporterCollectionMenu,
+    shouldAutoExportCollection,
     objCodec,
     objIECodec
 } from "./codec/obj_exporter";
@@ -28,6 +29,10 @@ import {registerText, unregisterTextActions} from "./elements/text";
 import {registerHand, unregisterHandActions} from "./elements/hand";
 import {registerBanner, unregisterBannerActions} from "./elements/banner";
 import {registerItem, unregisterItemActions} from "./elements/item";
+import {
+    registerAMTAnimationPreviewCleanupHooks,
+    unregisterAMTAnimationPreviewCleanupHooks
+} from "./elements/common";
 
 
 var iiBarMenu = null;
@@ -39,7 +44,7 @@ const plugin = BBPlugin.register('iitoolkit', {
     description: 'Utility plugin for Immersive Intelligence mod models. https://github.com/Pabilo8/ImmersiveIntelligence',
     about: 'Go to Animation -> Export AMT...',
     tags: ["Minecraft: Java Edition"],
-    version: '0.6.0',
+    version: '0.7.0',
     min_version: '4.0.0',
     variant: 'both',
     onload() {
@@ -57,6 +62,7 @@ const plugin = BBPlugin.register('iitoolkit', {
         registerHand();
         registerBanner();
         registerItem();
+        registerAMTAnimationPreviewCleanupHooks();
 
         iiBarMenu = new BarMenu("iitoolkit", [ungroup, exportAnimationAMT, exportAMTModel, exportAABB], {
             name: 'Immersive Intelligence Toolkit'
@@ -69,6 +75,8 @@ const plugin = BBPlugin.register('iitoolkit', {
 
         let hook = Blockbench.on("quick_save_model", () => {
             for (let collection of Collection.all) {
+                if (!shouldAutoExportCollection(collection))
+                    continue;
                 if (collection.export_codec === objCodec.id)
                     objCodec.writeCollection(collection);
                 else if (collection.export_codec === objIECodec.id)
@@ -84,6 +92,7 @@ const plugin = BBPlugin.register('iitoolkit', {
 
 function unregisterAll()
 {
+    unregisterAMTAnimationPreviewCleanupHooks();
     unregisterAABBActions();
     unregisterBulletActions();
     unregisterWireActions();

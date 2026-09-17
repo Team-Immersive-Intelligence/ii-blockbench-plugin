@@ -7,6 +7,7 @@ import {getTextElementProperties} from '../elements/text';
 import {getHandElementProperties} from '../elements/hand';
 import {getBannerElementProperties} from '../elements/banner';
 import {getItemElementProperties} from '../elements/item';
+import {getBulletAmmoType} from '../elements/bullet';
 
 const ROUND = 10000;
 const NORMAL_ROUND = 100;
@@ -18,7 +19,9 @@ const DEFAULT_EXPORT_OPTIONS = {
     obj_mtl: true,
     exported_offset: DEFAULT_EXPORTED_OFFSET,
     flip_axis: 'x',
-    flip_offset: [0, 0, 0]
+    flip_offset: [0, 0, 0],
+    mtl_file_name: '',
+    auto_export: true
 };
 const SPECIAL_AMT_TYPES = ['wire', 'bullet', 'fluid', 'track', 'ii_text', 'hand', 'banner', 'item'];
 const COLLECTION_EXPORT_OPTIONS_KEY = 'ii_obj_export_options';
@@ -65,6 +68,10 @@ function createExportSettings(source = {}, fallback = DEFAULT_EXPORT_OPTIONS) {
         exported_offset: vec3(supplied.exported_offset || supplied.offset || fallback.exported_offset, fallback.exported_offset),
         flip_axis: ['x', 'y', 'z'].includes(supplied.flip_axis) ? supplied.flip_axis : fallback.flip_axis,
         flip_offset: vec3(supplied.flip_offset || fallback.flip_offset, fallback.flip_offset),
+        mtl_file_name: typeof supplied.mtl_file_name === 'string'
+            ? supplied.mtl_file_name
+            : (typeof fallback.mtl_file_name === 'string' ? fallback.mtl_file_name : ''),
+        auto_export: supplied.auto_export !== undefined ? !!supplied.auto_export : fallback.auto_export !== false,
         flipped: !!supplied.flipped
     };
 }
@@ -78,7 +85,9 @@ function plainExportSettings(settings) {
         obj_mtl: settings.obj_mtl,
         exported_offset: settings.exported_offset.slice(),
         flip_axis: settings.flip_axis,
-        flip_offset: settings.flip_offset.slice()
+        flip_offset: settings.flip_offset.slice(),
+        mtl_file_name: settings.mtl_file_name,
+        auto_export: settings.auto_export
     };
 }
 
@@ -123,7 +132,14 @@ function ensureCollectionExportOptionsPersistence() {
 
 function getCollectionExportSettings(collection) {
     ensureCollectionExportOptionsPersistence();
-    return createExportSettings(collection?.[COLLECTION_EXPORT_OPTIONS_KEY], DEFAULT_EXPORT_OPTIONS);
+    const settings = createExportSettings(collection?.[COLLECTION_EXPORT_OPTIONS_KEY], DEFAULT_EXPORT_OPTIONS);
+    if (!settings.mtl_file_name)
+        settings.mtl_file_name = `${Project.name}.mtl`;
+    return settings;
+}
+
+export function shouldAutoExportCollection(collection) {
+    return getCollectionExportSettings(collection).auto_export !== false;
 }
 
 function normaliseExportSettings(options = {}) {
@@ -302,9 +318,21 @@ function ensureObjPath(path, extension = '.obj') {
     return info.dir + stripObjExtension(info.file) + (extension === '.obj.ie' ? '.obj.ie' : '.obj');
 }
 
-function getMtlPathForObj(path) {
+function normaliseMtlFileName(value, fallback) {
+    let name = getPathInfo(String(value || '').trim()).file;
+    if (!name) name = fallback;
+    if (!/\.mtl$/i.test(name)) name += '.mtl';
+    return name;
+}
+
+function getMtlFileName(path, settings = DEFAULT_EXPORT_OPTIONS) {
+    const fallback = stripObjExtension(getPathInfo(path).file) + '.mtl';
+    return normaliseMtlFileName(settings.mtl_file_name, fallback);
+}
+
+function getMtlPathForObj(path, settings = DEFAULT_EXPORT_OPTIONS) {
     const info = getPathInfo(path);
-    return info.dir + stripObjExtension(info.file) + '.mtl';
+    return info.dir + getMtlFileName(path, settings);
 }
 
 
@@ -328,7 +356,7 @@ function writeOBJSidecars(writerCodec, path, options = {}) {
     const settings = normaliseExportSettings(options);
     const attachment = options.attachment;
 
-    if (settings.obj_mtl) writerCodec.write(compileMaterial(), getMtlPathForObj(path));
+    if (settings.obj_mtl) writerCodec.write(compileMaterial(), getMtlPathForObj(path, settings));
     if (settings.obj_amt) writerCodec.write(autoStringify(compileAMT({attachment, export_settings: settings})), getAmtPathForObj(path));
 }
 
@@ -337,7 +365,7 @@ function writeOBJToPath(codec, path, options = {}) {
     const attachment = options.attachment;
     const extension = codec === objIECodec ? '.obj.ie' : '.obj';
     const exportPath = ensureObjPath(path, extension);
-    const compileOptions = {attachment, export_settings: settings, mtl_name: stripObjExtension(getPathInfo(exportPath).file) + '.mtl'};
+    const compileOptions = {attachment, export_settings: settings, mtl_name: getMtlFileName(exportPath, settings)};
 
     if (settings.obj_model !== false) {
         codec.write(codec.compile(compileOptions), exportPath);
@@ -345,7 +373,7 @@ function writeOBJToPath(codec, path, options = {}) {
             codec.write(codec.compile({
                 attachment,
                 export_settings: {...settings, flipped: true},
-                mtl_name: stripObjExtension(getPathInfo(exportPath).file) + '.mtl'
+                mtl_name: getMtlFileName(exportPath, settings)
             }), getFlippedObjPath(exportPath));
         }
     }
@@ -370,7 +398,7 @@ function exportOBJWithDialog(codec, options = {}) {
     });
 }
 
-function buildOBJOptionsForm(settings, includeMode = false) {
+function buildOBJOptionsForm(settings, includeMode = false, includeCollectionSettings = false) {
     const form = {};
     if (includeMode) {
         form.export_mode = {
@@ -387,6 +415,11 @@ function buildOBJOptionsForm(settings, includeMode = false) {
         exported_offset: {label: 'Exported Offset', type: 'vector', value: settings.exported_offset},
         obj_amt: {label: 'Export .obj.amt properties', type: 'checkbox', value: settings.obj_amt},
         obj_mtl: {label: 'Export .mtl file', type: 'checkbox', value: settings.obj_mtl},
+        mtl_file_name: {
+            label: 'MTL File Name',
+            type: 'text',
+            value: settings.mtl_file_name || `${Project.name}.mtl`
+        },
         obj_flipped: {label: 'Export flipped variant', type: 'checkbox', value: !!settings.obj_flipped},
         flip_axis: {
             label: 'Flipped Axis',
@@ -402,6 +435,13 @@ function buildOBJOptionsForm(settings, includeMode = false) {
             condition: result => result.obj_flipped
         }
     });
+    if (includeCollectionSettings) {
+        form.auto_export = {
+            label: 'Should Auto-Export',
+            type: 'checkbox',
+            value: settings.auto_export !== false
+        };
+    }
     return form;
 }
 
@@ -414,7 +454,7 @@ function openCollectionOBJOptionsDialog(collections = getSelectedCollections()) 
     const dialog = new Dialog({
         id: 'ii_collection_obj_export_options',
         title: collections.length === 1 ? 'II OBJ Export Options' : `II OBJ Export Options (${collections.length} collections)`,
-        form: buildOBJOptionsForm(getCollectionExportSettings(collections[0])),
+        form: buildOBJOptionsForm(getCollectionExportSettings(collections[0]), false, true),
         onConfirm(result) {
             collections.forEach(collection => rememberCollectionExportSettings(collection, result));
             dialog.hide();
@@ -639,30 +679,17 @@ function stripModelExtension(value) {
     return String(value || '').replace(/\.[a-z0-9]+$/i, '');
 }
 
-function mapBulletCoreType(value) {
-    const key = String(value || '').toLowerCase();
-    const map = {
-        core_softpoint: 'SOFTPOINT',
-        core_shaped: 'SHAPED',
-        core_shaped_sabot: 'SHAPED_SABOT',
-        core_piercing: 'PIERCING',
-        core_piercing_sabot: 'PIERCING_SABOT',
-        core_canister: 'CANISTER',
-        core_cluster: 'CLUSTER'
-    };
-    return map[key] || stripModelExtension(key).replace(/^core_/, '').toUpperCase();
-}
-
 function compileBulletProperties(element) {
     const props = {
-        ammoType: stripModelExtension(element.bulletType),
-        state: element.showCasing && element.coreType ? 'BULLET_UNUSED' : element.showCasing ? 'CASING' : element.coreType ? 'CORE' : 'BULLET_UNUSED'
+        state: String(element.state || 'bullet_unused').toLowerCase()
     };
-    if (element.coreType) {
-        props.core = String(element.coreType).replace(/^core_/, '');
-        props.coreType = mapBulletCoreType(element.coreType);
-    }
-    if (Array.isArray(element.rotation) && element.rotation.some(value => Number(value) !== 0)) props.base_rotation = vec3(element.rotation).map(value => roundObj(value));
+    const ammoType = getBulletAmmoType(element.bulletType);
+    if (ammoType) props.ammoType = ammoType;
+    if (element.coreType) props.coreType = String(element.coreType).replace(/^core_/, '').toLowerCase();
+    if (Array.isArray(element.rotation) && element.rotation.some(value => Number(value) !== 0))
+        props.base_rotation = vec3(element.rotation).map(value => roundObj(value));
+    if (Array.isArray(element.scale) && element.scale.some((value, index) => Number(value) !== [1, 1, 1][index]))
+        props.scale = vec3(element.scale, [1, 1, 1]).map(value => roundObj(value));
     return props;
 }
 

@@ -1,4 +1,4 @@
-/* global THREE, OutlinerNode */
+/* global THREE, OutlinerNode, OutlinerElement, Blockbench, Modes */
 // Shared helpers for IIToolkit custom Outliner elements.
 // These keep the custom preview nodes closer to Blockbench's native element contract:
 // Project.nodes_3d is keyed by UUID, and the THREE object name should also be the element UUID.
@@ -223,4 +223,46 @@ export function makeAMTTransformAnimator(type) {
     class AMTElementAnimator extends AMTTransformAnimator {}
     AMTElementAnimator.prototype.type = type;
     return AMTElementAnimator;
+}
+
+let amtAnimationPreviewCleanupHooks = [];
+
+function usesAMTTransformAnimator(element) {
+    const AnimatorType = element?.constructor?.animator;
+    return typeof AnimatorType === 'function' && (
+        AnimatorType === AMTTransformAnimator ||
+        AnimatorType.prototype instanceof AMTTransformAnimator
+    );
+}
+
+export function resetAMTAnimationPreviewTransforms() {
+    if (typeof OutlinerElement === 'undefined' || !OutlinerElement.all) return;
+
+    OutlinerElement.all.forEach(element => {
+        if (!element?.mesh || !usesAMTTransformAnimator(element)) return;
+
+        const previewController = element.constructor.preview_controller;
+        if (previewController?.updateTransform) previewController.updateTransform(element);
+        else updatePreviewTransform(element);
+    });
+}
+
+export function unregisterAMTAnimationPreviewCleanupHooks() {
+    resetAMTAnimationPreviewTransforms();
+    amtAnimationPreviewCleanupHooks.forEach(hook => hook?.delete?.());
+    amtAnimationPreviewCleanupHooks = [];
+}
+
+export function registerAMTAnimationPreviewCleanupHooks() {
+    unregisterAMTAnimationPreviewCleanupHooks();
+    if (typeof Blockbench === 'undefined' || typeof Blockbench.on !== 'function') return;
+
+    const scheduleReset = () => setTimeout(() => {
+        if (typeof Modes === 'undefined' || !Modes.animate) resetAMTAnimationPreviewTransforms();
+    }, 0);
+
+    ['select_mode', 'unselect_project', 'new_project'].forEach(eventName => {
+        const hook = Blockbench.on(eventName, scheduleReset);
+        if (hook) amtAnimationPreviewCleanupHooks.push(hook);
+    });
 }
