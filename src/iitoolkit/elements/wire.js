@@ -1,5 +1,4 @@
 import '../GLTFLoader';
-import {TextureFilter} from "three/src/constants"; // Not needed for wire, but keep if shared
 
 const ASSET_BASE = 'https://assets.iiteam.net/model/';
 const WIRE_TEXTURE_URL = ASSET_BASE + 'wire.png';

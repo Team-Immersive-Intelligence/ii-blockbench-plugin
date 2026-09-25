@@ -4,12 +4,20 @@ export class AABB extends OutlinerElement {
     constructor(data, uuid) {
         super(data, uuid);
 
+        const legacySize = Array.isArray(data?.size) ? data.size.slice() : null;
+
         //Initialize properties with defaults
         for (let key in AABB.properties) {
             AABB.properties[key].reset(this);
         }
         if (data && typeof data === 'object') {
             this.extend(data);
+        }
+        // IIToolkit 0.7 and older stored tactile boxes as [horizontal, vertical].
+        if (legacySize) {
+            this.width = nonNegativeNumber(legacySize[0], this.width);
+            this.height = nonNegativeNumber(legacySize[1], this.height);
+            this.depth = this.width;
         }
     }
 
@@ -63,7 +71,8 @@ export class AABB extends OutlinerElement {
 
     //Static behavior flags
     static behavior = {
-        unique_name: true,
+        // AABB names are template names and are intentionally reusable.
+        unique_name: false,
         movable: true,
         rotatable: false,   //AABB cannot be rotated
         scalable: false
@@ -75,12 +84,12 @@ let deletables = [];
 
 //----- AABB Element Class -----
 //Assign prototype properties
-AABB.prototype.title = 'AABB';
+AABB.prototype.title = 'Tactile AABB';
 AABB.prototype.type = 'aabb';
 AABB.prototype.icon = 'fas fa-cube';
 AABB.prototype.movable = true;
 AABB.prototype.rotatable = false;
-AABB.prototype.needsUniqueName = true;
+AABB.prototype.needsUniqueName = false;
 AABB.prototype.menu = new Menu([
     'edit_aabb_properties',
     '_',
@@ -97,15 +106,33 @@ AABB.prototype.buttons = [
 //----- Properties -----
 new Property(AABB, 'string', 'name', { default: 'aabb' });
 new Property(AABB, 'vector', 'position');
-//No rotation property needed, but we keep it for compatibility? Actually we omit rotation.
-new Property(AABB, 'vector2', 'size', {
-    default: [2, 2], //width (x and z) and height
+new Property(AABB, 'number', 'width', {
+    default: 2,
+    min: 0,
     inputs: {
         element_panel: {
-            input: { label: 'Size', type: 'vector', dimensions: 2 },
-            onChange() {
-                Canvas.updateView({ elements: AABB.selected, element_aspects: { transform: true } });
-            }
+            input: { label: 'X Size', type: 'number', min: 0 },
+            onChange: updateSelectedAABBGeometry
+        }
+    }
+});
+new Property(AABB, 'number', 'height', {
+    default: 2,
+    min: 0,
+    inputs: {
+        element_panel: {
+            input: { label: 'Y Size', type: 'number', min: 0 },
+            onChange: updateSelectedAABBGeometry
+        }
+    }
+});
+new Property(AABB, 'number', 'depth', {
+    default: 2,
+    min: 0,
+    inputs: {
+        element_panel: {
+            input: { label: 'Z Size', type: 'number', min: 0 },
+            onChange: updateSelectedAABBGeometry
         }
     }
 });
@@ -117,7 +144,7 @@ OutlinerElement.registerType(AABB, 'aabb');
 new NodePreviewController(AABB, {
     setup(element) {
         // Create line segments only (no fill)
-        const vertices = getBoxLineVertices(element.size[0], element.size[1]);
+        const vertices = getAABBVertices(element);
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
 
@@ -150,7 +177,7 @@ new NodePreviewController(AABB, {
     },
 
     updateGeometry(element) {
-        const vertices = getBoxLineVertices(element.size[0], element.size[1]);
+        const vertices = getAABBVertices(element);
         element.mesh.geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
         this.dispatchEvent('update_geometry', { element });
     },
@@ -166,7 +193,7 @@ new NodePreviewController(AABB, {
 export function registerAABBActions() {
     //Add AABB
     let addAction = new Action('add_aabb', {
-        name: 'Add AABB',
+        name: 'Add Tactile AABB',
         icon: 'crop_square',
         category: 'edit',
         condition: () => Modes.edit,
@@ -194,30 +221,42 @@ export function registerAABBActions() {
 
     //Edit properties dialog
     let propsAction = new Action('edit_aabb_properties', {
-        name: 'AABB Properties...',
+        name: 'Tactile AABB Properties...',
         icon: 'settings',
         category: 'edit',
         condition: () => AABB.selected.length,
         click() {
             new Dialog('edit_aabb_properties', {
-                title: 'Edit AABB Properties',
+                title: 'Edit Tactile AABB Properties',
                 form: {
-                    size: {
-                        label: 'Size (Width, Height)',
-                        value: AABB.selected[0]?.size,
-                        type: 'vector',
-                        dimensions: 2,
-                        min: 0.01
+                    width: {
+                        label: 'X Size',
+                        value: AABB.selected[0]?.width,
+                        type: 'number',
+                        min: 0
+                    },
+                    height: {
+                        label: 'Y Size',
+                        value: AABB.selected[0]?.height,
+                        type: 'number',
+                        min: 0
+                    },
+                    depth: {
+                        label: 'Z Size',
+                        value: AABB.selected[0]?.depth,
+                        type: 'number',
+                        min: 0
                     }
                 },
                 onConfirm(form) {
                     Undo.initEdit({ elements: AABB.selected });
                     AABB.selected.forEach(aabb => {
-                        aabb.size.replace(form.size);
+                        aabb.width = nonNegativeNumber(form.width, aabb.width);
+                        aabb.height = nonNegativeNumber(form.height, aabb.height);
+                        aabb.depth = nonNegativeNumber(form.depth, aabb.depth);
                         AABB.preview_controller.updateTransform(aabb);
-                        AABB.preview_controller.updateGeometry(aabb);
                     });
-                    Undo.finishEdit('Change AABB size');
+                    Undo.finishEdit('Change AABB properties');
                 }
             }).show();
         }
@@ -226,6 +265,22 @@ export function registerAABBActions() {
 
     //Make class globally available if needed
     window.AABB = AABB;
+}
+
+function nonNegativeNumber(value, fallback = 2) {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? number : fallback;
+}
+
+function getAABBVertices(element) {
+    return getBoxLineVertices(element.width, element.height, element.depth);
+}
+
+function updateSelectedAABBGeometry() {
+    AABB.selected.forEach(aabb => {
+        AABB.preview_controller.updateGeometry(aabb);
+    });
+    Canvas.updateView({ elements: AABB.selected, element_aspects: { transform: true } });
 }
 
 export function unregisterAABBActions() {

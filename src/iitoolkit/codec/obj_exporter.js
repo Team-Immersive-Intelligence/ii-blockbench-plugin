@@ -16,6 +16,7 @@ const DEFAULT_EXPORT_OPTIONS = {
     obj_model: true,
     obj_flipped: false,
     obj_amt: true,
+    amt_transforms: false,
     obj_mtl: true,
     exported_offset: DEFAULT_EXPORTED_OFFSET,
     flip_axis: 'x',
@@ -64,6 +65,7 @@ function createExportSettings(source = {}, fallback = DEFAULT_EXPORT_OPTIONS) {
         obj_model: supplied.obj_model !== undefined ? !!supplied.obj_model : fallback.obj_model,
         obj_flipped: supplied.obj_flipped !== undefined ? !!supplied.obj_flipped : fallback.obj_flipped,
         obj_amt: supplied.obj_amt !== undefined ? !!supplied.obj_amt : fallback.obj_amt,
+        amt_transforms: supplied.amt_transforms !== undefined ? !!supplied.amt_transforms : !!fallback.amt_transforms,
         obj_mtl: supplied.obj_mtl !== undefined ? !!supplied.obj_mtl : fallback.obj_mtl,
         exported_offset: vec3(supplied.exported_offset || supplied.offset || fallback.exported_offset, fallback.exported_offset),
         flip_axis: ['x', 'y', 'z'].includes(supplied.flip_axis) ? supplied.flip_axis : fallback.flip_axis,
@@ -82,6 +84,7 @@ function plainExportSettings(settings) {
         obj_model: settings.obj_model,
         obj_flipped: settings.obj_flipped,
         obj_amt: settings.obj_amt,
+        amt_transforms: settings.amt_transforms,
         obj_mtl: settings.obj_mtl,
         exported_offset: settings.exported_offset.slice(),
         flip_axis: settings.flip_axis,
@@ -414,6 +417,12 @@ function buildOBJOptionsForm(settings, includeMode = false, includeCollectionSet
         obj_model: {label: 'Export model geometry file', type: 'checkbox', value: settings.obj_model !== false},
         exported_offset: {label: 'Exported Offset', type: 'vector', value: settings.exported_offset},
         obj_amt: {label: 'Export .obj.amt properties', type: 'checkbox', value: settings.obj_amt},
+        amt_transforms: {
+            label: 'Export item camera transforms',
+            type: 'checkbox',
+            value: !!settings.amt_transforms,
+            condition: result => result.obj_amt
+        },
         obj_mtl: {label: 'Export .mtl file', type: 'checkbox', value: settings.obj_mtl},
         mtl_file_name: {
             label: 'MTL File Name',
@@ -807,7 +816,56 @@ function compileSpecialAMTProperties(element, exportScale, settings) {
     }
 }
 
-function compileAMT(options = {}) {
+const AMT_TRANSFORM_SLOTS = Object.freeze([
+    {blockbench: 'thirdperson_righthand', amt: 'third_person_right_hand'},
+    {blockbench: 'thirdperson_lefthand', amt: 'third_person_left_hand', leftHand: true},
+    {blockbench: 'firstperson_righthand', amt: 'first_person_right_hand'},
+    {blockbench: 'firstperson_lefthand', amt: 'first_person_left_hand', leftHand: true},
+    {blockbench: 'head', amt: 'head'},
+    {blockbench: 'gui', amt: 'gui'},
+    {blockbench: 'ground', amt: 'ground'},
+    {blockbench: 'fixed', amt: 'fixed'}
+]);
+
+function compileAMTTransform(slot, exported) {
+    const transform = {};
+    const handSign = slot.leftHand ? -1 : 1;
+
+    if (Array.isArray(exported.scale))
+        transform.scale = vec3(exported.scale, [1, 1, 1]).map(value => roundObj(value, 1000000));
+    if (Array.isArray(exported.rotation)) {
+        const rotation = vec3(exported.rotation);
+        // Minecraft reflects Y and Z rotation when it applies a left-hand slot.
+        rotation[1] *= handSign;
+        rotation[2] *= handSign;
+        transform.rotate = rotation.map(value => roundObj(value, 1000000));
+    }
+    if (Array.isArray(exported.translation)) {
+        const translation = vec3(exported.translation);
+        // Minecraft reflects X translation when it applies a left-hand slot.
+        translation[0] *= handSign;
+        transform.translate = translation.map(value => roundObj(value / 16, 1000000));
+    }
+    return transform;
+}
+
+function compileAMTTransforms() {
+    const transforms = {};
+    const displaySettings = Project?.display_settings || {};
+
+    AMT_TRANSFORM_SLOTS.forEach(slotInfo => {
+        const displaySlot = displaySettings[slotInfo.blockbench];
+        const exported = displaySlot && typeof displaySlot.export === 'function' ? displaySlot.export() : displaySlot;
+        if (!exported || typeof exported !== 'object') return;
+
+        const transform = compileAMTTransform(slotInfo, exported);
+        if (Object.keys(transform).length)
+            transforms[slotInfo.amt] = transform;
+    });
+    return transforms;
+}
+
+export function compileAMT(options = {}) {
     const settings = normaliseExportSettings(options);
     const exportScale = getExportScale();
     const amtFile = {origins: {}, hierarchy: {}};
@@ -827,6 +885,10 @@ function compileAMT(options = {}) {
     });
 
     if (Object.keys(properties).length) amtFile.properties = properties;
+    if (settings.amt_transforms) {
+        const transforms = compileAMTTransforms();
+        if (Object.keys(transforms).length) amtFile.transforms = transforms;
+    }
     return amtFile;
 }
 

@@ -4,17 +4,24 @@ import './codec/aabb_exporter'
 import './codec/obj_exporter'
 import './codec/amt_animation_exporter'
 import {exportAnimationAMT} from "./codec/amt_animation_exporter";
-import {exportAABB} from "./codec/aabb_exporter";
-import {ungroup} from "./misc_actions";
 import {
-    exportAMTModel,
-    exportOBJStaticAction,
-    exportOBJDynamicAction,
+    exportAABBData,
+    importMultiblockData,
+    importMultiblockStructureAction,
+    importTactileAABBAction,
+    registerAABBExporterPersistence
+} from "./codec/aabb_exporter";
+import {ungroup} from "./misc_actions";
+import {reAxisAnimation} from "./animation/re_axis_animation";
+import {
     configureOBJCollectionExportAction,
-    registerOBJExporterCollectionMenu,
-    shouldAutoExportCollection,
+    exportAMTModel,
+    exportOBJDynamicAction,
+    exportOBJStaticAction,
     objCodec,
-    objIECodec
+    objIECodec,
+    registerOBJExporterCollectionMenu,
+    shouldAutoExportCollection
 } from "./codec/obj_exporter";
 
 import {registerAABBActions, unregisterAABBActions} from "./elements/aabb";
@@ -23,16 +30,14 @@ import {registerTrack, unregisterTrackActions} from "./elements/track";
 import {registerWire, unregisterWireActions} from "./elements/wire";
 import {registerPipe, unregisterPipeActions} from "./elements/pipe";
 import {registerFluid, unregisterFluidActions} from "./elements/fluid";
-import {registerEmbeddedPart, unregisterEmbeddedPartActions} from "./elements/warehouse";
 import {registerHans, unregisterHansActions} from "./elements/hans";
 import {registerText, unregisterTextActions} from "./elements/text";
 import {registerHand, unregisterHandActions} from "./elements/hand";
 import {registerBanner, unregisterBannerActions} from "./elements/banner";
 import {registerItem, unregisterItemActions} from "./elements/item";
-import {
-    registerAMTAnimationPreviewCleanupHooks,
-    unregisterAMTAnimationPreviewCleanupHooks
-} from "./elements/common";
+import {registerAMTAnimationPreviewCleanupHooks, unregisterAMTAnimationPreviewCleanupHooks} from "./elements/common";
+import {registerMultiblockMode, unregisterMultiblockMode} from './multiblock/multiblock_mode';
+import {registerGenericDisplayMode, unregisterGenericDisplayMode} from "./display/display_mode";
 
 
 var iiBarMenu = null;
@@ -44,13 +49,16 @@ const plugin = BBPlugin.register('iitoolkit', {
     description: 'Utility plugin for Immersive Intelligence mod models. https://github.com/Pabilo8/ImmersiveIntelligence',
     about: 'Go to Animation -> Export AMT...',
     tags: ["Minecraft: Java Edition"],
-    version: '0.7.0',
+    version: '0.8.12',
     min_version: '4.0.0',
     variant: 'both',
     onload() {
         //Cleanuo
         unregisterAll();
+        registerGenericDisplayMode();
         registerAABBActions();
+        registerAABBExporterPersistence();
+        registerMultiblockMode();
         registerBullet();
         registerWire();
         registerPipe();
@@ -64,10 +72,18 @@ const plugin = BBPlugin.register('iitoolkit', {
         registerItem();
         registerAMTAnimationPreviewCleanupHooks();
 
-        iiBarMenu = new BarMenu("iitoolkit", [ungroup, exportAnimationAMT, exportAMTModel, exportAABB], {
+        iiBarMenu = new BarMenu("iitoolkit", [
+            ungroup, reAxisAnimation, exportAnimationAMT, exportAMTModel, '_',
+            importMultiblockData, importMultiblockStructureAction, importTactileAABBAction, '_',
+            exportAABBData
+        ], {
             name: 'Immersive Intelligence Toolkit'
         });
         MenuBar.addAction(exportAMTModel, 'file.export.0');
+        MenuBar.menus.file.addAction(importMultiblockData, 'import.0');
+        MenuBar.menus.file.addAction(importMultiblockStructureAction, 'import.0');
+        MenuBar.menus.file.addAction(importTactileAABBAction, 'import.0');
+        MenuBar.menus.file.addAction(exportAABBData, 'export.0');
 
         MenuBar.menus.file.addAction(exportOBJStaticAction, "export.1");
         MenuBar.menus.file.addAction(exportOBJDynamicAction, "export.1");
@@ -90,10 +106,11 @@ const plugin = BBPlugin.register('iitoolkit', {
     }
 });
 
-function unregisterAll()
-{
+function unregisterAll() {
+    unregisterGenericDisplayMode();
     unregisterAMTAnimationPreviewCleanupHooks();
     unregisterAABBActions();
+    unregisterMultiblockMode();
     unregisterBulletActions();
     unregisterWireActions();
     unregisterPipeActions();
@@ -107,8 +124,12 @@ function unregisterAll()
     unregisterItemActions();
 
     exportAnimationAMT.delete();
+    reAxisAnimation.delete();
     exportAMTModel.delete();
-    exportAABB.delete();
+    exportAABBData.delete();
+    importMultiblockData.delete();
+    importMultiblockStructureAction.delete();
+    importTactileAABBAction.delete();
     ungroup.delete();
     exportOBJStaticAction.delete();
     exportOBJDynamicAction.delete();

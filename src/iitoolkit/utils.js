@@ -191,12 +191,13 @@ export function normalizeVector(normal) {
     return normal.map(n => n / max);
 }
 
-export function getBoxLineVertices(width, height) {
+export function getBoxLineVertices(width, height, depth = width) {
     const w2 = width / 2;
     const h2 = height / 2;
+    const d2 = depth / 2;
     const corners = [
-        [-w2, -h2, -w2], [ w2, -h2, -w2], [ w2, -h2,  w2], [-w2, -h2,  w2],
-        [-w2,  h2, -w2], [ w2,  h2, -w2], [ w2,  h2,  w2], [-w2,  h2,  w2]
+        [-w2, -h2, -d2], [ w2, -h2, -d2], [ w2, -h2,  d2], [-w2, -h2,  d2],
+        [-w2,  h2, -d2], [ w2,  h2, -d2], [ w2,  h2,  d2], [-w2,  h2,  d2]
     ];
     const edges = [
         [0,1], [1,2], [2,3], [3,0], // bottom
