@@ -1,4 +1,9 @@
 import {getBoxLineVertices} from '../utils';
+import {AMTTransformAnimator, vectorFromInterpolation} from './common';
+import {displayAirAABB} from '../settings/display_settings';
+
+const FULL_BLOCK_AABB_VERTICES = getBoxLineVertices(16, 16, 16)
+    .map(coordinate => coordinate + 8);
 
 export class AABB extends OutlinerElement {
     constructor(data, uuid) {
@@ -190,7 +195,45 @@ new NodePreviewController(AABB, {
     }
 });
 
+class AABBAnimator extends AMTTransformAnimator {
+    displayFrame(multiplier = 1) {
+        if (!this.doRender()) return;
+
+        const element = this.getElement();
+        // Restore the normal preview transform first. Besides attaching the mesh,
+        // this converts the element's absolute position to an offset from its
+        // parent origin, so the parent rotates the AABB centre correctly.
+        NodePreviewController.prototype.updateTransform.call(AABB.preview_controller, element);
+        const mesh = element.mesh;
+        mesh.rotation.set(0, 0, 0);
+
+        if (!this.muted?.position) {
+            const offset = vectorFromInterpolation(this.interpolate('position', true), [0, 0, 0]);
+            mesh.position.x += offset[0] * multiplier;
+            mesh.position.y += offset[1] * multiplier;
+            mesh.position.z += offset[2] * multiplier;
+        }
+
+        // Cancel inherited orientation only. Position remains local to the
+        // parent and therefore still follows its translation and rotation.
+        if (mesh.parent) {
+            mesh.parent.updateMatrixWorld(true);
+            mesh.quaternion.copy(mesh.parent.getWorldQuaternion(new THREE.Quaternion()).invert());
+        }
+        mesh.updateMatrixWorld(true);
+    }
+}
+AABBAnimator.prototype.type = 'aabb';
+AABB.animator = AABBAnimator;
+
 export function registerAABBActions() {
+    const displaySettingsListener = Blockbench.on('ii_toolkit_display_settings_changed', () => {
+        const elements = OutlinerElement.all.filter(element => element instanceof AABB);
+        elements.forEach(element => AABB.preview_controller.updateGeometry(element));
+        Canvas.updateView({elements, element_aspects: {geometry: true}});
+    });
+    deletables.push(displaySettingsListener);
+
     //Add AABB
     let addAction = new Action('add_aabb', {
         name: 'Add Tactile AABB',
@@ -273,6 +316,8 @@ function nonNegativeNumber(value, fallback = 2) {
 }
 
 function getAABBVertices(element) {
+    const isAirAABB = element.width === 0 && element.height === 0 && element.depth === 0;
+    if (isAirAABB && displayAirAABB()) return FULL_BLOCK_AABB_VERTICES;
     return getBoxLineVertices(element.width, element.height, element.depth);
 }
 

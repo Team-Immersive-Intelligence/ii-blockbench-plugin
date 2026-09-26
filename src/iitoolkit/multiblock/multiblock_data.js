@@ -6,6 +6,8 @@ export {ROTATIONS};
 export function createDefaultMultiblockData() {
     return {
         version: 4,
+        name: '',
+        mod_id: 'immersiveintelligence',
         size: [1, 1, 1],
         master: [0, 0, 0],
         translation: [0, 0, 0],
@@ -107,6 +109,9 @@ export function normaliseMultiblockData(value) {
     const result = createDefaultMultiblockData();
     if (!value || typeof value !== 'object' || Array.isArray(value)) return result;
 
+    result.name = typeof value.name === 'string' ? value.name.trim() : result.name;
+    const modId = typeof value.mod_id === 'string' ? value.mod_id.trim().toLowerCase() : '';
+    if (/^[a-z0-9_.-]+$/.test(modId)) result.mod_id = modId;
     result.size = vector3(value.size, result.size, true, 1);
     result.master = vector3(value.master || value.master_position, result.master, true, 0)
         .map((coordinate, axis) => Math.min(coordinate, result.size[axis] - 1));
@@ -237,7 +242,12 @@ export function getBillOfMaterials(data) {
 
 export function importMultiblockSections(source, size) {
     const result = createDefaultMultiblockData();
+    result.name = typeof source?.name === 'string' ? source.name.trim() : result.name;
+    const modId = typeof source?.mod_id === 'string' ? source.mod_id.trim().toLowerCase() : '';
+    if (/^[a-z0-9_.-]+$/.test(modId)) result.mod_id = modId;
     result.size = vector3(size, result.size, true, 1);
+    result.master = vector3(source?.master || source?.master_position, result.master, true, 0)
+        .map((coordinate, axis) => Math.min(coordinate, result.size[axis] - 1));
     result.layer = result.size[1];
 
     const allBounds = source?.bounds && typeof source.bounds === 'object' ? source.bounds : {};
@@ -303,7 +313,14 @@ export function compileMultiblockSections(data) {
     Object.entries(data.rotations).forEach(([name, rotation]) => {
         if (data.poi[name] && ROTATIONS.includes(rotation)) rotations[name] = rotation;
     });
-    return {bounds: cloneData(data.bounds), positions, poi, rotations};
+    return {
+        name: data.name,
+        master: data.master.slice(),
+        bounds: cloneData(data.bounds),
+        positions,
+        poi,
+        rotations
+    };
 }
 
 export function nextName(existing, base) {

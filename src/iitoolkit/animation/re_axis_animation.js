@@ -110,6 +110,53 @@ export function reAxisAnimationKeyframes(animation, options = {}) {
     return keyframes.length;
 }
 
+function flippedComponents(channel, axis) {
+    if (channel === 'position') return [axis === 'x' ? 0 : 2];
+    if (channel === 'rotation') return axis === 'x' ? [1, 2] : [0, 1];
+    return [];
+}
+
+/**
+ * Mirrors one position or rotation keyframe across the requested world axis.
+ * A reflected rotation keeps the component around the mirror axis and negates
+ * the other two components; scale is deliberately left unchanged.
+ */
+export function flipAnimationAxisKeyframe(keyframe, axis) {
+    if (!keyframe || !['x', 'z'].includes(axis)) return false;
+    const components = flippedComponents(keyframe.channel, axis);
+    if (!components.length) return false;
+
+    (keyframe.data_points || []).forEach(point => {
+        components.forEach(component => {
+            const property = ['x', 'y', 'z'][component];
+            point[property] = negateMolang(point[property]);
+        });
+    });
+    [keyframe.bezier_left_value, keyframe.bezier_right_value].forEach(vector => {
+        if (!vector) return;
+        components.forEach(component => vector[component] = negateMolang(vector[component]));
+    });
+    return true;
+}
+
+export function getFlipAnimationAxisKeyframes(animation) {
+    const keyframes = [];
+    if (!animation || !animation.animators) return keyframes;
+    Object.keys(animation.animators).forEach(uuid => {
+        const animator = animation.animators[uuid];
+        (animator.keyframes || []).forEach(keyframe => {
+            if (keyframe.channel === 'position' || keyframe.channel === 'rotation') keyframes.push(keyframe);
+        });
+    });
+    return keyframes;
+}
+
+export function flipAnimationAxisKeyframes(animation, axis) {
+    const keyframes = getFlipAnimationAxisKeyframes(animation);
+    keyframes.forEach(keyframe => flipAnimationAxisKeyframe(keyframe, axis));
+    return keyframes.length;
+}
+
 export const reAxisAnimation = new Action('re_axis_animation', {
     name: 'Re-Axis Animation',
     description: 'Exchange the X and Z axes of every transform keyframe in the selected animation',
@@ -161,6 +208,53 @@ export const reAxisAnimation = new Action('re_axis_animation', {
                 Animator.preview();
                 Undo.finishEdit('Re-axis animation');
                 Blockbench.showQuickMessage(`Re-axed ${count} keyframe${count === 1 ? '' : 's'}`);
+            }
+        }).show();
+    }
+});
+
+export const flipAnimationAxis = new Action('flip_animation_axis', {
+    name: 'Flip Animation Axis',
+    description: 'Mirror every position and rotation keyframe in the selected animation across X or Z',
+    icon: 'flip',
+    category: 'animation',
+    condition: {modes: ['animate'], method: () => Animation.selected},
+    click() {
+        const animation = Animation.selected;
+        if (!animation) {
+            Blockbench.showQuickMessage('No animation selected', 'error');
+            return;
+        }
+
+        const keyframes = getFlipAnimationAxisKeyframes(animation);
+        if (!keyframes.length) {
+            Blockbench.showQuickMessage('The selected animation has no position or rotation keyframes', 'error');
+            return;
+        }
+
+        new Dialog({
+            id: 'flip_animation_axis',
+            title: 'Flip Animation Axis',
+            form: {
+                info: {
+                    type: 'info',
+                    text: 'Mirror all position and rotation keyframes across the selected axis. ' +
+                        'Scale keyframes and Bézier timing are not changed.'
+                },
+                axis: {
+                    label: 'Flip Axis',
+                    type: 'select',
+                    options: {x: 'X Axis', z: 'Z Axis'},
+                    value: 'x'
+                }
+            },
+            onConfirm(result) {
+                this.hide();
+                Undo.initEdit({animations: [animation]});
+                const count = flipAnimationAxisKeyframes(animation, result.axis);
+                Animator.preview();
+                Undo.finishEdit(`Flip animation on ${String(result.axis).toUpperCase()}`);
+                Blockbench.showQuickMessage(`Flipped ${count} keyframe${count === 1 ? '' : 's'} on ${String(result.axis).toUpperCase()}`);
             }
         }).show();
     }

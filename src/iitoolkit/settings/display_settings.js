@@ -1,0 +1,65 @@
+/* global Setting */
+
+const CATEGORY_ID = 'iitoolkit';
+const DISPLAY_AIR_AABB = 'ii_display_air_aabb';
+const DISPLAY_MULTIBLOCK_MASTER = 'ii_display_multiblock_master';
+
+let registeredSettings = [];
+
+function notifyDisplaySettingsChanged() {
+    Blockbench.dispatchEvent('ii_toolkit_display_settings_changed');
+}
+
+function settingValue(id, fallback) {
+    return settings[id] ? settings[id].value === true : fallback;
+}
+
+function setSettingValue(id, value) {
+    const setting = settings[id];
+    if (!setting) return;
+    setting.set(value);
+}
+
+export function displayAirAABB() {
+    return settingValue(DISPLAY_AIR_AABB, false);
+}
+
+export function displayMultiblockMaster() {
+    return settingValue(DISPLAY_MULTIBLOCK_MASTER, true);
+}
+
+export function setDisplayAirAABB(value) {
+    setSettingValue(DISPLAY_AIR_AABB, value);
+}
+
+export function setDisplayMultiblockMaster(value) {
+    setSettingValue(DISPLAY_MULTIBLOCK_MASTER, value);
+}
+
+export function registerIIToolkitSettings() {
+    unregisterIIToolkitSettings();
+
+    registeredSettings = [
+        new Setting(DISPLAY_AIR_AABB, {
+            name: 'Display Air AABB',
+            description: 'Display zero-size AABBs as full-block wireframe boxes.',
+            category: CATEGORY_ID,
+            type: 'toggle',
+            value: false,
+            onChange: notifyDisplaySettingsChanged
+        }),
+        new Setting(DISPLAY_MULTIBLOCK_MASTER, {
+            name: 'Display master block in Multiblock view',
+            description: 'Display the master block label and outline in Multiblock mode.',
+            category: CATEGORY_ID,
+            type: 'toggle',
+            value: true,
+            onChange: notifyDisplaySettingsChanged
+        })
+    ];
+}
+
+export function unregisterIIToolkitSettings() {
+    registeredSettings.forEach(setting => setting.delete());
+    registeredSettings = [];
+}

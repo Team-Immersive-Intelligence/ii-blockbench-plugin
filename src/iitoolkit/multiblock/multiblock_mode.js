@@ -16,6 +16,12 @@ import {
     toPreviewBounds,
     toPreviewPosition
 } from './multiblock_data';
+import {
+    displayAirAABB,
+    displayMultiblockMaster,
+    setDisplayAirAABB,
+    setDisplayMultiblockMaster
+} from '../settings/display_settings';
 
 const state = {
     selectedBound: '',
@@ -119,6 +125,27 @@ function clearOverlay() {
     overlayRoot = null;
 }
 
+function previewLocalToWorld(position) {
+    const root = Project?.model_3d;
+    if (!root) return position;
+    position.x *= -1;
+    root.updateMatrixWorld(true);
+    return root.localToWorld(position);
+}
+
+function previewWorldToLocal(position) {
+    const root = Project?.model_3d;
+    if (!root) return position;
+    root.updateMatrixWorld(true);
+    root.worldToLocal(position);
+    position.x *= -1;
+    return position;
+}
+
+function leaveMultiblockPreview() {
+    clearOverlay();
+}
+
 function lineSegments(vertices, colour, opacity = 1) {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
@@ -186,6 +213,8 @@ function numberPlane(number, x, y, z) {
     const material = new THREE.MeshBasicMaterial({map: texture, transparent: true, depthWrite: false, side: THREE.DoubleSide});
     const plane = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), material);
     plane.rotation.set(-Math.PI / 2, 0, Math.PI);
+    // Keep editor annotations readable inside the mirrored preview root.
+    plane.scale.x = -1;
     plane.position.set(x, y + 0.03, z);
     plane.renderOrder = 30;
     return plane;
@@ -221,17 +250,19 @@ export function refreshMultiblockPreview() {
     const data = getMultiblockData();
     overlayRoot = new THREE.Group();
     overlayRoot.name = 'ii_multiblock_preview';
-    overlayRoot.position.fromArray(data.translation);
+    overlayRoot.position.set(-data.translation[0], data.translation[1], data.translation[2]);
+    overlayRoot.scale.x = -1;
     Project.model_3d.add(overlayRoot);
 
     const allLayers = data.layer >= data.size[1];
+    const showMaster = displayMultiblockMaster();
     const floorLayer = allLayers ? 0 : data.layer;
     const floorY = floorLayer * 16 + 0.02;
     overlayRoot.add(floorGrid(data.size, floorY));
     for (let z = 0; z < data.size[2]; z++) {
         for (let x = 0; x < data.size[0]; x++) {
             const id = floorLayer * data.size[2] * data.size[0] + z * data.size[0] + x;
-            const isMaster = data.master[0] === x && data.master[1] === floorLayer && data.master[2] === z;
+            const isMaster = showMaster && data.master[0] === x && data.master[1] === floorLayer && data.master[2] === z;
             const preview = toPreviewPosition([x, floorLayer, z]);
             const air = isAirBlock(data, [x, floorLayer, z]);
             overlayRoot.add(numberPlane(isMaster ? `${id} M` : (air ? `${id} A` : id),
@@ -239,7 +270,7 @@ export function refreshMultiblockPreview() {
         }
     }
 
-    if (allLayers || data.master[1] === data.layer) {
+    if (showMaster && (allLayers || data.master[1] === data.layer)) {
         const [x, y, z] = toPreviewPosition(data.master);
         overlayRoot.add(lineSegments(boxVertices(x * 16 + 0.5, y * 16 + 0.5, z * 16 + 0.5,
             (x + 1) * 16 - 0.5, (y + 1) * 16 - 0.5, (z + 1) * 16 - 0.5), 0x00e5ff));
@@ -252,12 +283,20 @@ export function refreshMultiblockPreview() {
         names.forEach(name => {
             const bounds = toPreviewBounds(data.bounds[name]);
             if (!bounds) return;
-            const minX = preview[0] * 16 + bounds[0];
-            const minY = preview[1] * 16 + bounds[1];
-            const minZ = preview[2] * 16 + bounds[2];
-            const maxX = preview[0] * 16 + bounds[3];
-            const maxY = preview[1] * 16 + bounds[4];
-            const maxZ = preview[2] * 16 + bounds[5];
+            let minX = preview[0] * 16 + bounds[0];
+            let minY = preview[1] * 16 + bounds[1];
+            let minZ = preview[2] * 16 + bounds[2];
+            let maxX = preview[0] * 16 + bounds[3];
+            let maxY = preview[1] * 16 + bounds[4];
+            let maxZ = preview[2] * 16 + bounds[5];
+            if (displayAirAABB() && minX === maxX && minY === maxY && minZ === maxZ) {
+                minX = preview[0] * 16;
+                minY = preview[1] * 16;
+                minZ = preview[2] * 16;
+                maxX = minX + 16;
+                maxY = minY + 16;
+                maxZ = minZ + 16;
+            }
             overlayRoot.add(lineSegments(boxVertices(minX, minY, minZ, maxX, maxY, maxZ),
                 presetColour(name, state.selectedBound === name)));
             overlayRoot.add(boundHitbox(minX, minY, minZ, maxX, maxY, maxZ, key, name));
@@ -662,6 +701,21 @@ function setTranslation(axis, value) {
     editMultiblock('Set multiblock preview translation', data => data.translation[axis] = number);
 }
 
+function setMultiblockName(value) {
+    const name = String(value || '').trim();
+    editMultiblock('Set multiblock ID', data => data.name = name);
+}
+
+function setMultiblockModId(value) {
+    const modId = String(value || '').trim().toLowerCase();
+    if (!/^[a-z0-9_.-]+$/.test(modId)) {
+        updatePanels();
+        showError('The mod ID must contain only lower-case letters, numbers, underscores, dots, and hyphens.');
+        return;
+    }
+    editMultiblock('Set multiblock mod ID', data => data.mod_id = modId);
+}
+
 function setMasterPosition(axis, value) {
     const number = Math.trunc(Number(value));
     if (!Number.isFinite(number)) return updatePanels();
@@ -793,8 +847,9 @@ function previewClick(event, preview) {
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -(data.translation[1] + layer * 16));
     const point = new THREE.Vector3();
     if (!raycaster.ray.intersectPlane(plane, point)) return;
-    const previewX = Math.floor((point.x - data.translation[0]) / 16);
-    const previewZ = Math.floor((point.z - data.translation[2]) / 16);
+    const localPoint = previewWorldToLocal(point);
+    const previewX = Math.floor((localPoint.x - data.translation[0]) / 16);
+    const previewZ = Math.floor((localPoint.z - data.translation[2]) / 16);
     if (previewX < 0 || previewZ < 0 || previewX >= data.size[0] || previewZ >= data.size[2]) return;
     toggleCell(toPreviewPosition([previewX, layer, previewZ]));
 }
@@ -845,6 +900,7 @@ function resizeBounds(bounds, context, difference) {
     const result = bounds.slice();
     const resizeAxis = (axis, direction) => {
         if (typeof axis !== 'number') return;
+        if (axis === 0) direction *= -1;
         if (direction < 0) result[axis] -= difference;
         else result[axis + 3] += difference;
     };
@@ -914,8 +970,9 @@ function registerTransformModule() {
             const key = ensureActiveBoundKey(data);
             const centre = placementCentre(data, state.selectedBound, key);
             if (!centre) return false;
+            previewLocalToWorld(centre);
             Transformer.position.copy(centre).sub(scene.position);
-            Transformer.rotation_ref = Project.model_3d;
+            Transformer.rotation_ref = scene;
             return true;
         },
         calculateOffset(context) {
@@ -932,6 +989,8 @@ function registerTransformModule() {
                 : context.point[axis];
             if (expanding && axis !== 'e' && !context.second_axis) {
                 value *= context.direction || 1;
+            } else if (!expanding && axis === 'x') {
+                value *= -1;
             }
             return Math.round(value / snap) * snap;
         },
@@ -994,12 +1053,14 @@ function panelPosition(index, height = 190) {
 function registerPanels() {
     const settingsPanel = new Panel('ii_multiblock_settings', {
         name: 'Multiblock', icon: 'view_in_ar', condition: {modes: ['multiblock']},
-        default_position: panelPosition(0, 285), resizable: true,
+        default_position: panelPosition(0, 410), resizable: true,
         component: {
             data() { return {revision: 0}; },
             computed: {
                 data() { this.revision; return getMultiblockData(); },
                 layerLabel() { return this.data.layer >= this.data.size[1] ? 'All layers' : `Layer ${this.data.layer}`; },
+                showAirAABB() { this.revision; return displayAirAABB(); },
+                showMasterBlock() { this.revision; return displayMultiblockMaster(); },
                 activeEditor() {
                     this.revision;
                     const tool = selectedTool();
@@ -1012,20 +1073,32 @@ function registerPanels() {
             },
             methods: {
                 setLayer,
+                setMultiblockName,
+                setMultiblockModId,
                 setTranslation,
                 setMasterPosition,
-                applySize
+                applySize,
+                toggleAirAABB(event) { setDisplayAirAABB(event.target.checked); },
+                toggleMasterBlock(event) { setDisplayMultiblockMaster(event.target.checked); }
             },
             template: `
                 <div class="ii_multiblock_panel ii_multiblock_settings">
                     <label>Vertical Layer <b>{{ layerLabel }}</b></label>
                     <input type="range" min="0" :max="data.size[1]" step="1" :value="data.layer" @input="setLayer($event.target.value)">
+                    <label>Multiblock ID</label>
+                    <input type="text" autocomplete="off" placeholder="II:Vulcanizer" :value="data.name" @change="setMultiblockName($event.target.value)">
+                    <label>Mod ID</label>
+                    <input type="text" autocomplete="off" placeholder="immersiveintelligence" :value="data.mod_id" @change="setMultiblockModId($event.target.value)">
                     <label>Multiblock Size</label>
                     <div class="ii_vector_row"><span v-for="(axis, index) in ['X','Y','Z']"><i>{{axis}}</i><input type="number" min="1" step="1" :value="data.size[index]" @change="applySize(index, $event.target.value)"></span></div>
                     <label>Master Block Position</label>
                     <div class="ii_vector_row"><span v-for="(axis, index) in ['X','Y','Z']"><i>{{axis}}</i><input type="number" min="0" :max="data.size[index] - 1" step="1" :value="data.master[index]" @change="setMasterPosition(index, $event.target.value)"></span></div>
                     <label>Preview Translation</label>
                     <div class="ii_vector_row"><span v-for="(axis, index) in ['X','Y','Z']"><i>{{axis}}</i><input type="number" step="0.25" :value="data.translation[index]" @change="setTranslation(index, $event.target.value)"></span></div>
+                    <div class="ii_multiblock_display_options">
+                        <label><input type="checkbox" :checked="showAirAABB" @change="toggleAirAABB($event)"><span>Display Air AABB</span></label>
+                        <label><input type="checkbox" :checked="showMasterBlock" @change="toggleMasterBlock($event)"><span>Display master block in Multiblock view</span></label>
+                    </div>
                     <p class="ii_multiblock_hint">{{ activeEditor }}</p>
                 </div>`
         }
@@ -1170,7 +1243,7 @@ export function registerMultiblockMode() {
             refreshAll();
         },
         onUnselect() {
-            clearOverlay();
+            leaveMultiblockPreview();
         }
     });
     track(mode);
@@ -1188,10 +1261,11 @@ export function registerMultiblockMode() {
         clearOverlay();
         if (modeActive()) refreshAll();
     });
-    const projectUnselect = Blockbench.on('unselect_project', clearOverlay);
+    const projectUnselect = Blockbench.on('unselect_project', leaveMultiblockPreview);
     const dataRefresh = Blockbench.on('ii_multiblock_refresh', refreshAll);
+    const displaySettingsRefresh = Blockbench.on('ii_toolkit_display_settings_changed', refreshAll);
     const viewUpdate = Blockbench.on('update_view', installPreviewListeners);
-    track(undoCreate, undoLoad, projectSelect, projectUnselect, dataRefresh, viewUpdate);
+    track(undoCreate, undoLoad, projectSelect, projectUnselect, dataRefresh, displaySettingsRefresh, viewUpdate);
 
     styleHandle = Blockbench.addCSS(`
         .ii_multiblock_panel { padding: 8px; overflow: auto; }
@@ -1199,11 +1273,15 @@ export function registerMultiblockMode() {
         .ii_list_panel > .ii_panel_actions { flex: 0 0 auto; }
         .ii_list_panel > .ii_scroll_list { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; margin-top: 6px; padding-right: 2px; }
         .ii_multiblock_panel label { display: flex; justify-content: space-between; margin: 5px 0 3px; }
+        .ii_multiblock_settings > input[type="text"] { box-sizing: border-box; width: 100%; }
         .ii_multiblock_panel input[type="range"] { width: 100%; }
         .ii_vector_row { display: flex; gap: 5px; }
         .ii_vector_row span { display: flex; min-width: 0; flex: 1; align-items: center; gap: 3px; }
         .ii_vector_row i { width: 12px; font-style: normal; color: var(--color-subtle_text); }
         .ii_vector_row input { min-width: 0; width: 100%; }
+        .ii_multiblock_display_options { margin-top: 8px; }
+        .ii_multiblock_display_options label { justify-content: flex-start; align-items: center; gap: 6px; margin: 4px 0; }
+        .ii_multiblock_display_options input { margin: 0; }
         .ii_multiblock_hint { color: var(--color-subtle_text); margin: 8px 0; }
         .ii_panel_actions { display: flex; gap: 6px; }
         .ii_panel_actions button { display: inline-flex; flex: 0 0 30px; width: 30px; height: 28px; padding: 0; align-items: center; justify-content: center; }
@@ -1235,7 +1313,7 @@ export function registerMultiblockMode() {
 }
 
 export function unregisterMultiblockMode() {
-    clearOverlay();
+    leaveMultiblockPreview();
     removePreviewListeners();
     while (deletables.length) {
         const item = deletables.pop();

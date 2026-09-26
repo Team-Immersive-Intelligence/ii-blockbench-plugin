@@ -219,6 +219,8 @@ export function compileStaticData(existingData = {}, preserveContents = true) {
         names[name] = registry.add(name, bounds);
     });
     result.bounds = registry.bounds;
+    result.name = sections.name;
+    result.master = sections.master;
     result.positions = {};
     Object.entries(sections.positions).forEach(([positions, references]) => {
         result.positions[positions] = Array.isArray(references)
@@ -361,10 +363,18 @@ function openStaticImportDialog(data) {
                 label: 'Minecraft Structure', type: 'file', extensions: ['nbt'], readtype: 'binary',
                 return_as: 'file', description: 'Optional: imports the size and prevents editing air blocks.'
             },
+            name: {
+                label: 'Multiblock ID', type: 'text',
+                value: typeof data?.name === 'string' ? data.name : current.name
+            },
+            mod_id: {
+                label: 'Mod ID', type: 'text',
+                value: typeof data?.mod_id === 'string' ? data.mod_id : current.mod_id
+            },
             size: {label: 'Multiblock Size (X, Y, Z)', type: 'vector', dimensions: 3, min: 1, value: current.size},
             master: {
                 label: 'Master Block Position (X, Y, Z)', type: 'vector', dimensions: 3, min: 0,
-                value: current.master
+                value: vector3(data?.master || data?.master_position, current.master)
             },
             translation: {
                 label: 'Preview Translation (X, Y, Z)', type: 'vector', dimensions: 3, value: current.translation
@@ -392,6 +402,11 @@ function openStaticImportDialog(data) {
                         ? parsedStructure : await parseStructureFile(result.structure_file))
                     : null;
                 const imported = importMultiblockSections(data, structure?.size || result.size);
+                imported.name = String(result.name || '').trim();
+                const modId = String(result.mod_id || '').trim().toLowerCase();
+                if (!/^[a-z0-9_.-]+$/.test(modId))
+                    throw new Error('The mod ID must contain only lower-case letters, numbers, underscores, dots, and hyphens.');
+                imported.mod_id = modId;
                 imported.master = vector3(result.master);
                 imported.translation = vector3(result.translation);
                 if (structure) {

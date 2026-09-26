@@ -3,6 +3,7 @@ import './utils'
 import './codec/aabb_exporter'
 import './codec/obj_exporter'
 import './codec/amt_animation_exporter'
+import {exportMultiblockBlockstate} from './codec/blockstate_exporter';
 import {exportAnimationAMT} from "./codec/amt_animation_exporter";
 import {
     exportAABBData,
@@ -12,7 +13,7 @@ import {
     registerAABBExporterPersistence
 } from "./codec/aabb_exporter";
 import {ungroup} from "./misc_actions";
-import {reAxisAnimation} from "./animation/re_axis_animation";
+import {flipAnimationAxis, reAxisAnimation} from "./animation/re_axis_animation";
 import {
     configureOBJCollectionExportAction,
     exportAMTModel,
@@ -38,6 +39,7 @@ import {registerItem, unregisterItemActions} from "./elements/item";
 import {registerAMTAnimationPreviewCleanupHooks, unregisterAMTAnimationPreviewCleanupHooks} from "./elements/common";
 import {registerMultiblockMode, unregisterMultiblockMode} from './multiblock/multiblock_mode';
 import {registerGenericDisplayMode, unregisterGenericDisplayMode} from "./display/display_mode";
+import {registerIIToolkitSettings, unregisterIIToolkitSettings} from './settings/display_settings';
 
 
 var iiBarMenu = null;
@@ -56,6 +58,7 @@ const plugin = BBPlugin.register('iitoolkit', {
         //Cleanuo
         unregisterAll();
         registerGenericDisplayMode();
+        registerIIToolkitSettings();
         registerAABBActions();
         registerAABBExporterPersistence();
         registerMultiblockMode();
@@ -73,9 +76,9 @@ const plugin = BBPlugin.register('iitoolkit', {
         registerAMTAnimationPreviewCleanupHooks();
 
         iiBarMenu = new BarMenu("iitoolkit", [
-            ungroup, reAxisAnimation, exportAnimationAMT, exportAMTModel, '_',
+            ungroup, reAxisAnimation, flipAnimationAxis, exportAnimationAMT, exportAMTModel, '_',
             importMultiblockData, importMultiblockStructureAction, importTactileAABBAction, '_',
-            exportAABBData
+            exportAABBData, exportMultiblockBlockstate
         ], {
             name: 'Immersive Intelligence Toolkit'
         });
@@ -84,6 +87,7 @@ const plugin = BBPlugin.register('iitoolkit', {
         MenuBar.menus.file.addAction(importMultiblockStructureAction, 'import.0');
         MenuBar.menus.file.addAction(importTactileAABBAction, 'import.0');
         MenuBar.menus.file.addAction(exportAABBData, 'export.0');
+        MenuBar.menus.file.addAction(exportMultiblockBlockstate, 'export.0');
 
         MenuBar.menus.file.addAction(exportOBJStaticAction, "export.1");
         MenuBar.menus.file.addAction(exportOBJDynamicAction, "export.1");
@@ -125,8 +129,10 @@ function unregisterAll() {
 
     exportAnimationAMT.delete();
     reAxisAnimation.delete();
+    flipAnimationAxis.delete();
     exportAMTModel.delete();
     exportAABBData.delete();
+    exportMultiblockBlockstate.delete();
     importMultiblockData.delete();
     importMultiblockStructureAction.delete();
     importTactileAABBAction.delete();
@@ -134,4 +140,5 @@ function unregisterAll() {
     exportOBJStaticAction.delete();
     exportOBJDynamicAction.delete();
     configureOBJCollectionExportAction.delete();
+    unregisterIIToolkitSettings();
 }
