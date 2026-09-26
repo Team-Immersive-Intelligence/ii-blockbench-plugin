@@ -36,6 +36,7 @@ import {registerText, unregisterTextActions} from "./elements/text";
 import {registerHand, unregisterHandActions} from "./elements/hand";
 import {registerBanner, unregisterBannerActions} from "./elements/banner";
 import {registerItem, unregisterItemActions} from "./elements/item";
+import {registerParticle, setParticleFolderAction, unregisterParticleActions} from "./elements/particle";
 import {registerAMTAnimationPreviewCleanupHooks, unregisterAMTAnimationPreviewCleanupHooks} from "./elements/common";
 import {registerMultiblockMode, unregisterMultiblockMode} from './multiblock/multiblock_mode';
 import {registerGenericDisplayMode, unregisterGenericDisplayMode} from "./display/display_mode";
@@ -51,9 +52,10 @@ const plugin = BBPlugin.register('iitoolkit', {
     description: 'Utility plugin for Immersive Intelligence mod models. https://github.com/Pabilo8/ImmersiveIntelligence',
     about: 'Go to Animation -> Export AMT...',
     tags: ["Minecraft: Java Edition"],
-    version: '0.8.12',
-    min_version: '4.0.0',
-    variant: 'both',
+    version: '0.9.0',
+    min_version: '5.0.0',
+    variant: 'desktop',
+    await_loading: true,
     onload() {
         //Cleanuo
         unregisterAll();
@@ -73,10 +75,12 @@ const plugin = BBPlugin.register('iitoolkit', {
         registerHand();
         registerBanner();
         registerItem();
+        registerParticle();
         registerAMTAnimationPreviewCleanupHooks();
 
         iiBarMenu = new BarMenu("iitoolkit", [
-            ungroup, reAxisAnimation, flipAnimationAxis, exportAnimationAMT, exportAMTModel, '_',
+            ungroup, reAxisAnimation, flipAnimationAxis, setParticleFolderAction, '_',
+            exportAnimationAMT, exportAMTModel, '_',
             importMultiblockData, importMultiblockStructureAction, importTactileAABBAction, '_',
             exportAABBData, exportMultiblockBlockstate
         ], {
@@ -126,6 +130,7 @@ function unregisterAll() {
     unregisterHandActions();
     unregisterBannerActions();
     unregisterItemActions();
+    unregisterParticleActions();
 
     exportAnimationAMT.delete();
     reAxisAnimation.delete();

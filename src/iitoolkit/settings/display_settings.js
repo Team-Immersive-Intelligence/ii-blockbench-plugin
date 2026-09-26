@@ -3,6 +3,7 @@
 const CATEGORY_ID = 'iitoolkit';
 const DISPLAY_AIR_AABB = 'ii_display_air_aabb';
 const DISPLAY_MULTIBLOCK_MASTER = 'ii_display_multiblock_master';
+const PARTICLE_RESOURCE_FOLDER = 'ii_particle_resource_folder';
 
 let registeredSettings = [];
 
@@ -12,6 +13,11 @@ function notifyDisplaySettingsChanged() {
 
 function settingValue(id, fallback) {
     return settings[id] ? settings[id].value === true : fallback;
+}
+
+function stringSettingValue(id, fallback = '') {
+    const value = settings[id]?.value;
+    return typeof value === 'string' ? value : fallback;
 }
 
 function setSettingValue(id, value) {
@@ -36,6 +42,16 @@ export function setDisplayMultiblockMaster(value) {
     setSettingValue(DISPLAY_MULTIBLOCK_MASTER, value);
 }
 
+export function particleResourceFolder() {
+    return stringSettingValue(PARTICLE_RESOURCE_FOLDER);
+}
+
+export function setParticleResourceFolder(value) {
+    const setting = settings[PARTICLE_RESOURCE_FOLDER];
+    if (!setting) return;
+    setting.set(String(value || ''));
+}
+
 export function registerIIToolkitSettings() {
     unregisterIIToolkitSettings();
 
@@ -55,6 +71,13 @@ export function registerIIToolkitSettings() {
             type: 'toggle',
             value: true,
             onChange: notifyDisplaySettingsChanged
+        }),
+        new Setting(PARTICLE_RESOURCE_FOLDER, {
+            name: 'AMT Particle Resource Folder',
+            description: 'Persistent resource-pack folder used to resolve AMT particle definitions, models, and textures.',
+            category: CATEGORY_ID,
+            type: 'text',
+            value: ''
         })
     ];
 }

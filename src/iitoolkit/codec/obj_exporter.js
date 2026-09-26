@@ -7,6 +7,7 @@ import {getTextElementProperties} from '../elements/text';
 import {getHandElementProperties} from '../elements/hand';
 import {getBannerElementProperties} from '../elements/banner';
 import {getItemElementProperties} from '../elements/item';
+import {getParticleElementProperties} from '../elements/particle';
 import {getBulletAmmoType} from '../elements/bullet';
 
 const ROUND = 10000;
@@ -24,7 +25,7 @@ const DEFAULT_EXPORT_OPTIONS = {
     mtl_file_name: '',
     auto_export: true
 };
-const SPECIAL_AMT_TYPES = ['wire', 'bullet', 'fluid', 'track', 'ii_text', 'hand', 'banner', 'item'];
+const SPECIAL_AMT_TYPES = ['wire', 'bullet', 'fluid', 'track', 'ii_text', 'hand', 'banner', 'item', 'particle'];
 const COLLECTION_EXPORT_OPTIONS_KEY = 'ii_obj_export_options';
 let collectionExportOptionsPersistenceRegistered = false;
 
@@ -812,6 +813,7 @@ function compileSpecialAMTProperties(element, exportScale, settings) {
         case 'hand': return getHandElementProperties(element);
         case 'banner': return getBannerElementProperties(element);
         case 'item': return getItemElementProperties(element);
+        case 'particle': return getParticleElementProperties(element);
         default: return null;
     }
 }

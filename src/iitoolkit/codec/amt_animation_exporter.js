@@ -1,4 +1,5 @@
 /* global PathModule, Settings, autoStringify */
+import {readParticleLifetimeKeyframe} from '../elements/particle';
 export var lastAnimationState = true, exportAnimations = {};
 
 function getSelectedAnimations(animations, formResult) {
@@ -148,7 +149,13 @@ export function compileAnimation(animation) {
                     if (!channels[channel]) {
                         channels[channel] = {};
                     }
-                    if (kf.transform) {
+                    if (channel === 'property' && group?.type === 'particle') {
+                        const timecodeString = kf.getTimecodeString();
+                        channels[channel][timecodeString] = {
+                            time: parseFloat(timecodeString) / maxlength,
+                            property: readParticleLifetimeKeyframe(kf)
+                        };
+                    } else if (kf.transform) {
                         let keyframe;
                         const timecodeString = kf.getTimecodeString();
 
@@ -167,7 +174,11 @@ export function compileAnimation(animation) {
                         channels[channel][timecodeString] = keyframe;
                     }
                 })
-                for (const channel in Animator.possible_channels) {
+                const channelOrder = [...new Set([
+                    ...Object.keys(Animator.possible_channels || {}),
+                    ...Object.keys(channels)
+                ])];
+                for (const channel of channelOrder) {
                     const timecodes = channels[channel];
                     if (timecodes) {
                         Object.keys(timecodes).sort((a, b) => parseFloat(a) - parseFloat(b)).forEach((timecode) => {
