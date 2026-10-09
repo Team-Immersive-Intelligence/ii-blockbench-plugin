@@ -1,5 +1,6 @@
 import '../GLTFLoader';
 import { loadIIGLBModel } from '../utils';
+import {cleanupConvertedPipeMesh} from '../mesh/pipe_mesh_cleanup';
 import {
     collectVisibleMeshes,
     createPreviewObject3D,
@@ -19,6 +20,7 @@ const COMMON_PIPE_TEXTURE_URL = ASSET_BASE + COMMON_PIPE_TEXTURE_NAME + '.png';
 
 let deletables = [];
 let registered = false;
+let pipeConversionTask = null;
 
 const modelCache = new Map();
 
@@ -735,6 +737,7 @@ function findCommonPipeTexture() {
 }
 
 async function getOrCreateCommonPipeTexture() {
+    const project = Project;
     let texture = findCommonPipeTexture();
     if (texture)
         return texture;
@@ -746,6 +749,8 @@ async function getOrCreateCommonPipeTexture() {
         reader.onload = () => resolve(reader.result);
         reader.readAsDataURL(blob);
     });
+
+    if (Project !== project) throw new Error('The project changed during pipe conversion');
 
     texture = new Texture({
         name: COMMON_PIPE_TEXTURE_NAME
@@ -860,13 +865,78 @@ function createBlockbenchMeshFromPipe(pipe, meshData) {
     return mesh;
 }
 
-async function convertPipeToMesh(pipe) {
+async function convertPipeToMesh(pipe, cancelled = () => false) {
     await Pipe.preview_controller.updateGeometry(pipe);
+    if (cancelled()) return null;
     return await collectPipeMeshData(pipe).then(meshData => {
-        if (!meshData)
+        if (!meshData || cancelled())
             return null;
         return createBlockbenchMeshFromPipe(pipe, meshData);
     });
+}
+
+export async function convertSelectedPipesToMeshes() {
+    if (pipeConversionTask) return;
+    const project = Project, undo = project.undo || Undo, pipes = Pipe.selected.slice();
+    if (!pipes.length) return;
+    const task = {cancelled: false};
+    pipeConversionTask = task;
+    const converted = [], trackedTextures = [], originalTextures = Texture.all.slice();
+    const trackedElements = pipes.flatMap(pipe => [pipe, ...pipe.getAllNodes()]);
+    const sourceElements = trackedElements.slice();
+    const progress = new Dialog('ii_pipe_mesh_cleanup', {
+        title: 'Convert Pipe to Mesh — Cleaning Geometry', progress_bar: {progress: 0},
+        buttons: ['Cancel'], cancel_on_click_outside: false,
+        onConfirm() { task.cancelled = true; return false; }, onCancel() { task.cancelled = true; return false; }
+    });
+    const cancelled = () => task.cancelled || Project !== project;
+    const trackTextures = () => {
+        const textures = project.textures || (Project === project ? Texture.all : []);
+        textures.forEach(texture => {
+            if (!originalTextures.includes(texture) && !trackedTextures.includes(texture)) trackedTextures.push(texture);
+        });
+    };
+    undo.initEdit({outliner: true, elements: trackedElements, textures: trackedTextures, bitmap: true, selection: true});
+    progress.show();
+    try {
+        let merged = 0, quads = 0, removed = 0;
+        for (let i = 0; i < pipes.length; i++) {
+            if (cancelled()) throw new Error('Pipe conversion cancelled');
+            const pipe = pipes[i], mesh = await convertPipeToMesh(pipe, cancelled);
+            trackTextures();
+            if (mesh) { trackedElements.push(mesh); converted.push(mesh); }
+            if (cancelled()) throw new Error('Pipe conversion cancelled');
+            if (!mesh) continue;
+            unselectAll(); mesh.select();
+            const result = await cleanupConvertedPipeMesh(mesh, {cancelled,
+                progress: value => progress.progress_bar?.setProgress?.((i + value) / pipes.length)});
+            if (!result || cancelled()) throw new Error('Pipe conversion cancelled');
+            merged += result.merged; quads += result.quads; removed += result.removed;
+            pipe.remove();
+        }
+        if (!converted.length) {
+            undo.cancelEdit(true);
+            Blockbench.showQuickMessage('Pipe geometry is not ready to convert');
+            return;
+        }
+        unselectAll(); converted.forEach(mesh => mesh.select());
+        Canvas.updateAll();
+        const remaining = sourceElements.filter(element => Outliner.elements.includes(element));
+        undo.finishEdit('Convert Pipe to Mesh', {outliner: true, elements: [...remaining, ...converted],
+            textures: trackedTextures, bitmap: true, selection: true});
+        Blockbench.showQuickMessage(`Converted ${converted.length} pipe${converted.length === 1 ? '' : 's'} to Mesh: ${merged} vertices merged, ${quads} quads, ${removed} inner faces removed`, 5000);
+        return converted;
+    } catch (exception) {
+        trackTextures();
+        // Undo uses the active project's scene when restoring a save. If a tab
+        // changed despite the modal, restore this transaction when it reopens.
+        if (Project === project) undo.cancelEdit(true);
+        else project.whenNextOpen(() => undo.cancelEdit(true));
+        Blockbench.showQuickMessage(task.cancelled || Project !== project ? 'Pipe conversion cancelled' : `Pipe conversion failed: ${exception.message}`, 5000);
+    } finally {
+        progress.hide();
+        if (pipeConversionTask === task) pipeConversionTask = null;
+    }
 }
 
 // ----------------------------------------------------------------------
@@ -925,31 +995,9 @@ function createActions() {
         name: 'Convert Pipe to Mesh',
         icon: 'polyline',
         category: 'edit',
-        condition: () => Modes.edit && Pipe.hasSelected(),
-        async click() {
-            const pipes = Pipe.selected.slice();
-            const converted = [];
-
-            Undo.initEdit({outliner: true, elements: pipes, selection: true});
-            for (let pipe of pipes) {
-                const mesh = await convertPipeToMesh(pipe);
-                if (mesh) {
-                    converted.push(mesh);
-                    pipe.remove();
-                }
-            }
-
-            if (converted.length) {
-                unselectAll();
-                converted.forEach(mesh => mesh.select());
-                Canvas.updateAll();
-                Undo.finishEdit('Convert Pipe to Mesh', {outliner: true, elements: converted, selection: true});
-                Blockbench.showQuickMessage(`Converted ${converted.length} pipe${converted.length === 1 ? '' : 's'} to Mesh`);
-            } else {
-                Undo.cancelEdit();
-                Blockbench.showQuickMessage('Pipe geometry is not ready to convert', 'error');
-            }
-        }
+        description: 'Convert, weld vertices to their centres, quadify, and remove inner faces at maximum sampling.',
+        condition: () => Modes.edit && Pipe.hasSelected() && !pipeConversionTask,
+        click: convertSelectedPipesToMeshes
     });
     deletables.push(addPipeAction, addPipeNodeAction, convertPipeToMeshAction);
 }
@@ -970,6 +1018,7 @@ export function registerPipe() {
 }
 
 export function unregisterPipeActions() {
+    if (pipeConversionTask) pipeConversionTask.cancelled = true;
     deletables.forEach(action => action.delete());
     deletables.length = 0;
     registered = false;

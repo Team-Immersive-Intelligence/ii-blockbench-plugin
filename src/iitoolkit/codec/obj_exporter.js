@@ -361,7 +361,10 @@ function writeOBJSidecars(writerCodec, path, options = {}) {
     const attachment = options.attachment;
 
     if (settings.obj_mtl) writerCodec.write(compileMaterial(), getMtlPathForObj(path, settings));
-    if (settings.obj_amt) writerCodec.write(autoStringify(compileAMT({attachment, export_settings: settings})), getAmtPathForObj(path));
+    if (settings.obj_amt) writerCodec.write(autoStringify(compileAMT({
+        attachment,
+        export_settings: settings
+    })), getAmtPathForObj(path));
 }
 
 function writeOBJToPath(codec, path, options = {}) {
@@ -805,16 +808,26 @@ function compileTrackProperties(element) {
 function compileSpecialAMTProperties(element, exportScale, settings) {
     if (!element || element.export === false || element.visibility === false) return null;
     switch (element.type) {
-        case 'wire': return compileWireProperties(element, exportScale, settings);
-        case 'fluid': return compileFluidProperties(element);
-        case 'bullet': return compileBulletProperties(element);
-        case 'track': return compileTrackProperties(element);
-        case 'ii_text': return getTextElementProperties(element);
-        case 'hand': return getHandElementProperties(element);
-        case 'banner': return getBannerElementProperties(element);
-        case 'item': return getItemElementProperties(element);
-        case 'particle': return getParticleElementProperties(element);
-        default: return null;
+        case 'wire':
+            return compileWireProperties(element, exportScale, settings);
+        case 'fluid':
+            return compileFluidProperties(element);
+        case 'bullet':
+            return compileBulletProperties(element);
+        case 'track':
+            return compileTrackProperties(element);
+        case 'ii_text':
+            return getTextElementProperties(element);
+        case 'hand':
+            return getHandElementProperties(element);
+        case 'banner':
+            return getBannerElementProperties(element);
+        case 'item':
+            return getItemElementProperties(element);
+        case 'particle':
+            return getParticleElementProperties(element);
+        default:
+            return null;
     }
 }
 
@@ -1040,7 +1053,12 @@ function compileModel(options = {}) {
 
 function appendThreeMeshObj(compiled, sourceMesh, exportScale, settings, indexVertex, indexVertexUvs, indexNormals, currentMaterial) {
     let geometry = sourceMesh.geometry;
-    if (!geometry || !geometry.attributes || !geometry.attributes.position) return {vertices: 0, uvs: 0, normals: 0, currentMaterial};
+    if (!geometry || !geometry.attributes || !geometry.attributes.position) return {
+        vertices: 0,
+        uvs: 0,
+        normals: 0,
+        currentMaterial
+    };
 
     if (!geometry.attributes.normal) {
         geometry = geometry.clone();
@@ -1109,7 +1127,6 @@ function appendThreeMeshObj(compiled, sourceMesh, exportScale, settings, indexVe
         currentMaterial
     };
 }
-
 
 
 function compileMaterial() {

@@ -42,6 +42,8 @@ import {registerAMTAnimationPreviewCleanupHooks, unregisterAMTAnimationPreviewCl
 import {registerMultiblockMode, unregisterMultiblockMode} from './multiblock/multiblock_mode';
 import {registerGenericDisplayMode, unregisterGenericDisplayMode} from "./display/display_mode";
 import {registerIIToolkitSettings, unregisterIIToolkitSettings} from './settings/display_settings';
+import {registerReSourceTexturesAction, unregisterReSourceTexturesAction} from './textures/re_source_textures';
+import {registerMeshActions, unregisterMeshActions} from './mesh/mesh_actions';
 
 
 var iiBarMenu = null;
@@ -79,9 +81,12 @@ const plugin = BBPlugin.register('iitoolkit', {
         registerParticle();
         registerAMTParticleEditor();
         registerAMTAnimationPreviewCleanupHooks();
+        const reSourceTextures = registerReSourceTexturesAction();
+        const meshActions = registerMeshActions();
 
         iiBarMenu = new BarMenu("iitoolkit", [
-            ungroup, reAxisAnimation, flipAnimationAxis, setParticleFolderAction, '_',
+            ungroup, reAxisAnimation, flipAnimationAxis, reSourceTextures, setParticleFolderAction, '_',
+            ...meshActions, '_',
             exportAnimationAMT, exportAMTModel, '_',
             importMultiblockData, importMultiblockStructureAction, importTactileAABBAction, '_',
             exportAABBData, exportMultiblockBlockstate
@@ -117,6 +122,8 @@ const plugin = BBPlugin.register('iitoolkit', {
 });
 
 function unregisterAll() {
+    unregisterMeshActions();
+    unregisterReSourceTexturesAction();
     unregisterGenericDisplayMode();
     unregisterAMTAnimationPreviewCleanupHooks();
     unregisterAABBActions();
