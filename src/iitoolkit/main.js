@@ -37,6 +37,7 @@ import {registerHand, unregisterHandActions} from "./elements/hand";
 import {registerBanner, unregisterBannerActions} from "./elements/banner";
 import {registerItem, unregisterItemActions} from "./elements/item";
 import {registerParticle, setParticleFolderAction, unregisterParticleActions} from "./elements/particle";
+import {registerAMTParticleEditor, unregisterAMTParticleEditor} from './particle_editor/particle_mode';
 import {registerAMTAnimationPreviewCleanupHooks, unregisterAMTAnimationPreviewCleanupHooks} from "./elements/common";
 import {registerMultiblockMode, unregisterMultiblockMode} from './multiblock/multiblock_mode';
 import {registerGenericDisplayMode, unregisterGenericDisplayMode} from "./display/display_mode";
@@ -76,6 +77,7 @@ const plugin = BBPlugin.register('iitoolkit', {
         registerBanner();
         registerItem();
         registerParticle();
+        registerAMTParticleEditor();
         registerAMTAnimationPreviewCleanupHooks();
 
         iiBarMenu = new BarMenu("iitoolkit", [
@@ -130,6 +132,7 @@ function unregisterAll() {
     unregisterHandActions();
     unregisterBannerActions();
     unregisterItemActions();
+    unregisterAMTParticleEditor();
     unregisterParticleActions();
 
     exportAnimationAMT.delete();

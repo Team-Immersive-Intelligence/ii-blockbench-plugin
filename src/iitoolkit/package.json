@@ -15,13 +15,13 @@
   "blockbenchConfig": {
     "title": "Immersive Intelligence Toolkit",
     "author": "Pabilo8",
-    "icon": "azureicon.png",
+    "icon": "icon.png",
     "description": "Utility plugin for working with Immersive Intelligence's AMT model standard.",
     "new_repository_format": "true",
     "variant": "both",
     "contributes": {
-      "formats": ["AMT Model"],
-      "open_extensions": ["obj.amt", ".amt", "obj", "obj.ie"]
+      "formats": ["AMT Model", "AMT Particle"],
+      "open_extensions": ["obj.amt", "amt", "obj", "obj.ie", ".amt.fx"]
     },
     "has_changelog": false,
     "tags": [

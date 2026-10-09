@@ -172,6 +172,10 @@ function particleAssetContext(sourcePath, fallbackName = '') {
     };
 }
 
+export function particlePreviewContextFromPath(sourcePath, fallbackName = '') {
+    return particleAssetContext(sourcePath, fallbackName);
+}
+
 function splitResourceLocation(value, fallbackNamespace) {
     const resource = String(value || '').trim();
     const separator = resource.indexOf(':');
@@ -193,6 +197,10 @@ function mergeParticleDefinitions(parent, child) {
         ...(Array.isArray(child?.programs) ? child.programs : [])];
     merged.programs = [...new Set(programs.filter(program => typeof program === 'string'))];
     return merged;
+}
+
+export function mergeParticlePreviewDefinitions(parent, child) {
+    return normaliseParticleDefinition(mergeParticleDefinitions(parent, child));
 }
 
 function loadParticleDefinitionFromPath(sourcePath, seen = new Set()) {
@@ -337,8 +345,8 @@ export function evaluateParticleState(value, progress) {
         secondary: parseColour(definition.color_secondary),
         stretch: definition.stretch.slice(),
         textureShift: Math.trunc(Number(definition.texture_shift) || 0),
-        rotationYaw: Number(definition.rotation?.[0]) || 0,
-        rotationPitch: Number(definition.rotation?.[1]) || 0,
+        rotationYaw: Number(definition.rotation_yaw ?? definition.rotation?.[0]) || 0,
+        rotationPitch: Number(definition.rotation_pitch ?? definition.rotation?.[1]) || 0,
         retextures: {},
         ignoredPrograms: []
     };
@@ -1330,6 +1338,39 @@ function applyParticlePreviewState(element, progress = null) {
     element._particleIgnoredPrograms = state.ignoredPrograms;
 }
 
+export async function createStandaloneParticlePreview(definition, context = {}, options = {}) {
+    const root = new THREE.Group();
+    root.name = 'ii_particle_preview_instance';
+    root.no_export = true;
+    const element = {
+        mesh: root,
+        particleData: normaliseParticleDefinition(definition),
+        particleProperties: {},
+        particleAssetsRoot: context.assetsRoot || '',
+        particleNamespace: context.namespace || 'immersiveintelligence',
+        particleId: context.particleId || '',
+        lifetime: clamp01(options.progress),
+        correctRotation: options.correctRotation !== false
+    };
+    const visual = await createParticleVisual(element, element.particleData);
+    root.add(visual);
+    applyParticlePreviewState(element, element.lifetime);
+    return {object: root, element};
+}
+
+export function updateStandaloneParticlePreview(instance, definition, progress) {
+    if (!instance?.element) return;
+    instance.element.particleData = normaliseParticleDefinition(definition);
+    instance.element.lifetime = clamp01(progress);
+    applyParticlePreviewState(instance.element, instance.element.lifetime);
+}
+
+export function disposeStandaloneParticlePreview(instance) {
+    if (!instance?.object) return;
+    instance.object.parent?.remove(instance.object);
+    clearChildren(instance.object);
+}
+
 function updateSelectedParticlePreview(rebuild = false) {
     const selectedParticles = Array.isArray(AMTParticle.selected) ? AMTParticle.selected : [];
     selectedParticles.forEach(element => rebuild
@@ -1439,6 +1480,34 @@ function particleAssetRoots() {
         return getParticleFolderIndex().assetRoots;
     } catch (ignored) {
         return [];
+    }
+}
+
+export function resolveParticlePreviewSource(particleId, context = {}) {
+    const id = String(particleId || '').trim();
+    if (!id) return null;
+    const namespace = context.namespace || 'immersiveintelligence';
+    const cached = editorParticleEntry(id, namespace);
+    if (cached) return cached;
+
+    const directPath = particleDefinitionPath({
+        assetsRoot: context.assetsRoot || '',
+        namespace
+    }, id);
+    if (directPath) {
+        try {
+            return cacheEditorParticle(directPath);
+        } catch (ignored) {
+            // Fall through to the configured particle-folder index.
+        }
+    }
+    try {
+        const index = getParticleFolderIndex();
+        const key = canonicalResourceLocation(id, namespace);
+        const path = index.byId.get(key) || index.byId.get(key.substring(key.indexOf(':') + 1));
+        return path ? cacheEditorParticle(path) : null;
+    } catch (ignored) {
+        return null;
     }
 }
 
