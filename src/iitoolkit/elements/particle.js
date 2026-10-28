@@ -53,7 +53,7 @@ let nativePathModule = null;
 let nativeFilesystemError = null;
 let nativeFilesystemRequestAttempted = false;
 
-const RESERVED_AMT_PROPERTIES = new Set(['particle', 'correct_rotation', 'property']);
+const RESERVED_AMT_PROPERTIES = new Set(['particle', 'correct_rotation', 'property', 'base_rotation']);
 
 function desktopRequire() {
     const legacyRequire = typeof window !== 'undefined' && typeof window.require === 'function'
@@ -1322,10 +1322,13 @@ async function rebuildParticlePreview(element) {
 }
 
 function applyParticlePreviewState(element, progress = null) {
+    // Keep animation age on the preview, never on the saved Edit-mode value.
+    const lifetime = progress === null
+        ? (element.mesh?.userData.particlePreviewLifetime ?? element.lifetime) : progress;
+    if (element.mesh) element.mesh.userData.particlePreviewLifetime = clamp01(lifetime);
     const visual = element.mesh?.getObjectByName('particle_visual') || element.mesh?.children?.[0];
     if (!visual) return;
-    const state = evaluateParticleState(effectiveParticleDefinition(element),
-        progress === null ? element.lifetime : progress);
+    const state = evaluateParticleState(effectiveParticleDefinition(element), lifetime);
     visual.userData.applyState?.(state);
     if (visual.userData.usesParticleRotation) {
         visual.rotation.set(
@@ -2066,7 +2069,7 @@ new Property(AMTParticle, 'number', 'lifetime', {
                 const particles = Array.isArray(AMTParticle.selected) ? AMTParticle.selected : [];
                 particles.forEach(element => {
                     element.lifetime = clamp01(element.lifetime);
-                    applyParticlePreviewState(element);
+                    applyParticlePreviewState(element, element.lifetime);
                 });
             }
         }
@@ -2083,7 +2086,7 @@ new NodePreviewController(AMTParticle, {
     },
     updateTransform(element) {
         updatePreviewTransform(element);
-        applyParticlePreviewState(element);
+        applyParticlePreviewState(element, element.lifetime);
         this.dispatchEvent('update_transform', {element});
     },
     updateGeometry(element) {
@@ -2178,33 +2181,9 @@ export class AMTParticleAnimator extends AMTTransformAnimator {
         const element = this.getElement();
         if (!element?.mesh) return;
 
-        AMTParticle.preview_controller.updateTransform(element);
-        const mesh = element.mesh;
-        if (!this.muted?.rotation) {
-            const rotation = this.interpolate('rotation', true);
-            if (rotation) {
-                mesh.rotation.x += Math.degToRad(rotation[0]) * multiplier;
-                mesh.rotation.y += Math.degToRad(rotation[1]) * multiplier;
-                mesh.rotation.z += Math.degToRad(rotation[2]) * multiplier;
-            }
-        }
-        if (!this.muted?.position) {
-            const position = this.interpolate('position', true);
-            if (position) {
-                mesh.position.x += position[0] * multiplier;
-                mesh.position.y += position[1] * multiplier;
-                mesh.position.z += position[2] * multiplier;
-            }
-        }
-        if (!this.muted?.scale) {
-            const scale = this.interpolate('scale', true);
-            if (scale) {
-                mesh.scale.x *= (1 + (scale[0] - 1) * multiplier) || 0.00001;
-                mesh.scale.y *= (1 + (scale[1] - 1) * multiplier) || 0.00001;
-                mesh.scale.z *= (1 + (scale[2] - 1) * multiplier) || 0.00001;
-            }
-        }
-        mesh.updateMatrixWorld(true);
+        // The shared animator applies deltas to Blockbench's current pose, so
+        // blended animations compose instead of restarting at the Edit pose.
+        super.displayFrame(multiplier);
 
         const lifetime = this.muted?.property ? clamp01(element.lifetime) : interpolateParticleLifetime(this);
         applyParticlePreviewState(element, lifetime);
@@ -2315,6 +2294,7 @@ export function getParticleElementProperties(element) {
     return Object.assign({}, normaliseParticleProperties(element.particleProperties), {
         particle,
         correct_rotation: element.correctRotation === true,
+        base_rotation: Array.isArray(element.rotation) ? element.rotation.slice() : [0, 0, 0],
         property: clamp01(element.lifetime)
     });
 }

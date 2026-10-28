@@ -1,4 +1,4 @@
-/* global THREE, OutlinerNode, OutlinerElement, Blockbench, Modes */
+/* global THREE, OutlinerNode, OutlinerElement, Blockbench, Modes, Format */
 // Shared helpers for IIToolkit custom Outliner elements.
 // These keep the custom preview nodes closer to Blockbench's native element contract:
 // Project.nodes_3d is keyed by UUID, and the THREE object name should also be the element UUID.
@@ -62,7 +62,7 @@ export function createPreviewObject3D(element, options = {}) {
 }
 
 export function attachPreviewObject(element, object, fallbackToModel = true) {
-    if (element.parent instanceof OutlinerNode) {
+    if (Format.bone_rig && element.parent instanceof OutlinerNode && element.parent.getTypeBehavior('parent')) {
         const parentObject = element.parent.scene_object || element.parent.mesh;
         if (parentObject && object.parent !== parentObject) parentObject.add(object);
     } else if (fallbackToModel) {
@@ -91,6 +91,18 @@ export function updatePreviewTransform(element, options = {}) {
     else object.scale.set(1, 1, 1);
 
     attachPreviewObject(element, object, options.fallbackToModel !== false);
+    // Like Locator and Mesh, positions are stored in model coordinates. A
+    // Group's preview object already contributes its absolute origin.
+    if (Format.bone_rig && element.parent instanceof OutlinerNode &&
+        element.parent.getTypeBehavior('parent') && element.parent.getTypeBehavior('use_absolute_position')) {
+        object.position.x -= element.parent.origin[0];
+        object.position.y -= element.parent.origin[1];
+        object.position.z -= element.parent.origin[2];
+    }
+    // Blockbench uses these snapshots for default poses and animation gizmos.
+    object.fix_position = object.position.clone();
+    object.fix_rotation = object.rotation.clone();
+    object.fix_scale = object.scale.clone();
     object.updateMatrixWorld(true);
     return object;
 }
@@ -144,16 +156,30 @@ export function vectorFromInterpolation(value, fallback) {
     return fallback.slice();
 }
 
-export function applyAMTAnimatedTransform(element, animatedPosition = null, animatedRotation = null, animatedScale = null) {
+export function applyAMTAnimatedTransform(element, animatedPosition = null, animatedRotation = null, animatedScale = null, multiplier = 1, override = false) {
     if (!element || !element.mesh) return;
     const object = element.mesh;
-    const position = vectorFromInterpolation(animatedPosition, element.position || [0, 0, 0]);
-    const rotation = vectorFromInterpolation(animatedRotation, element.rotation || [0, 0, 0]);
-    const scale = vectorFromInterpolation(animatedScale, element.scale || [1, 1, 1]);
-
-    object.position.fromArray(position);
-    object.rotation.setFromDegreeArray(rotation);
-    object.scale.fromArray(scale);
+    if (animatedPosition) {
+        const position = vectorFromInterpolation(animatedPosition, [0, 0, 0]);
+        if (override && object.fix_position) object.position.copy(object.fix_position);
+        object.position.x += position[0] * multiplier;
+        object.position.y += position[1] * multiplier;
+        object.position.z += position[2] * multiplier;
+    }
+    if (animatedRotation) {
+        const rotation = vectorFromInterpolation(animatedRotation, [0, 0, 0]);
+        if (override && object.fix_rotation) object.rotation.copy(object.fix_rotation);
+        object.rotation.x += THREE.MathUtils.degToRad(rotation[0]) * multiplier;
+        object.rotation.y += THREE.MathUtils.degToRad(rotation[1]) * multiplier;
+        object.rotation.z += THREE.MathUtils.degToRad(rotation[2]) * multiplier;
+    }
+    if (animatedScale) {
+        const scale = vectorFromInterpolation(animatedScale, [1, 1, 1]);
+        if (override && object.fix_scale) object.scale.copy(object.fix_scale);
+        object.scale.x *= (1 + (scale[0] - 1) * multiplier) || 0.00001;
+        object.scale.y *= (1 + (scale[1] - 1) * multiplier) || 0.00001;
+        object.scale.z *= (1 + (scale[2] - 1) * multiplier) || 0.00001;
+    }
     object.updateMatrixWorld(true);
 }
 
@@ -198,24 +224,17 @@ export class AMTTransformAnimator extends BoneAnimator {
         return element && element.mesh;
     }
 
-    displayFrame() {
+    displayFrame(multiplier = 1) {
         if (!this.doRender()) return;
         const element = this.getElement();
-        const basePosition = Array.isArray(element.position) ? element.position : [0, 0, 0];
-        const baseRotation = Array.isArray(element.rotation) ? element.rotation : [0, 0, 0];
-        const baseScale = Array.isArray(element.scale) ? element.scale : [1, 1, 1];
-
         const animatedPosition = this.muted?.position
-            ? basePosition.slice()
-            : vectorFromInterpolation(this.interpolate('position', true), basePosition);
+            ? null : this.interpolate('position', true);
         const animatedRotation = this.muted?.rotation
-            ? baseRotation.slice()
-            : vectorFromInterpolation(this.interpolate('rotation', true), baseRotation);
+            ? null : this.interpolate('rotation', true);
         const animatedScale = this.muted?.scale
-            ? baseScale.slice()
-            : vectorFromInterpolation(this.interpolate('scale', true), baseScale);
+            ? null : this.interpolate('scale', true);
 
-        applyAMTAnimatedTransform(element, animatedPosition, animatedRotation, animatedScale);
+        applyAMTAnimatedTransform(element, animatedPosition, animatedRotation, animatedScale, multiplier, this.animation?.override);
     }
 }
 
@@ -257,6 +276,11 @@ export function registerAMTAnimationPreviewCleanupHooks() {
     unregisterAMTAnimationPreviewCleanupHooks();
     if (typeof Blockbench === 'undefined' || typeof Blockbench.on !== 'function') return;
 
+    // showDefaultPose runs before animation stacking and when Animation mode
+    // closes. Native code restores position/rotation, but resets scale to one.
+    const defaultPoseHook = Blockbench.on('display_default_pose', resetAMTAnimationPreviewTransforms);
+    if (defaultPoseHook) amtAnimationPreviewCleanupHooks.push(defaultPoseHook);
+
     const scheduleReset = () => setTimeout(() => {
         if (typeof Modes === 'undefined' || !Modes.animate) resetAMTAnimationPreviewTransforms();
     }, 0);
@@ -266,3 +290,4 @@ export function registerAMTAnimationPreviewCleanupHooks() {
         if (hook) amtAnimationPreviewCleanupHooks.push(hook);
     });
 }
+

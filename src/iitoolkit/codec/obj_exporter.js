@@ -1,4 +1,4 @@
-/* global Collection, Settings, THREE, autoStringify, Locator, Texture, scene, OutlinerNode, Mesh, Property */
+/* global Collection, Settings, THREE, Locator, Texture, scene, OutlinerNode, Mesh, Property */
 //-- Export Dialogue --//
 import {getResourceLocation} from '../utils';
 import {Pipe} from '../elements/pipe';
@@ -25,7 +25,12 @@ const DEFAULT_EXPORT_OPTIONS = {
     mtl_file_name: '',
     auto_export: true
 };
-const SPECIAL_AMT_TYPES = ['wire', 'bullet', 'fluid', 'track', 'ii_text', 'hand', 'banner', 'item', 'particle'];
+// Header ids are runtime AMT types, independent of Blockbench's UI type names.
+const SPECIAL_AMT_TYPE_IDS = Object.freeze({
+    wire: 'wire', bullet: 'bullet', fluid: 'fluid', track: 'track',
+    ii_text: 'text', hand: 'hand', banner: 'banner', item: 'item', particle: 'particle'
+});
+const SPECIAL_AMT_TYPES = Object.keys(SPECIAL_AMT_TYPE_IDS);
 const COLLECTION_EXPORT_OPTIONS_KEY = 'ii_obj_export_options';
 let collectionExportOptionsPersistenceRegistered = false;
 
@@ -361,10 +366,12 @@ function writeOBJSidecars(writerCodec, path, options = {}) {
     const attachment = options.attachment;
 
     if (settings.obj_mtl) writerCodec.write(compileMaterial(), getMtlPathForObj(path, settings));
-    if (settings.obj_amt) writerCodec.write(autoStringify(compileAMT({
+    // AMT headers are plain JSON data. Blockbench's autoStringify calls
+    // hasOwnProperty directly and cannot handle our null-prototype type map.
+    if (settings.obj_amt) writerCodec.write(JSON.stringify(compileAMT({
         attachment,
         export_settings: settings
-    })), getAmtPathForObj(path));
+    }), null, 4), getAmtPathForObj(path));
 }
 
 function writeOBJToPath(codec, path, options = {}) {
@@ -884,6 +891,7 @@ export function compileAMT(options = {}) {
     const settings = normaliseExportSettings(options);
     const exportScale = getExportScale();
     const amtFile = {origins: {}, hierarchy: {}};
+    const types = Object.create(null);
     const properties = {};
 
     getExportGroups(options).forEach(group => addAMTElement(group, amtFile.origins, amtFile.hierarchy, exportScale, settings, group.origin));
@@ -895,10 +903,18 @@ export function compileAMT(options = {}) {
     });
     getExportTrackHierarchyElements(options).forEach(element => addAMTElement(element, amtFile.origins, amtFile.hierarchy, exportScale, settings));
     getExportOutlinerElements(options).forEach(element => {
+        if (!element?.name || element.export === false || element.visibility === false) return;
+        const type = element instanceof Locator ? 'locator' : (SPECIAL_AMT_TYPES.includes(element.type) ? SPECIAL_AMT_TYPE_IDS[element.type] : null);
+        if (type) types[element.name] = type;
         const props = compileSpecialAMTProperties(element, exportScale, settings);
         if (props && Object.keys(props).length) properties[element.name] = props;
     });
 
+    getExportTrackHierarchyElements(options).forEach(element => {
+        if (element?.name && element.export !== false && element.visibility !== false)
+            types[element.name] = 'locator';
+    });
+    if (Object.keys(types).length) amtFile.types = types;
     if (Object.keys(properties).length) amtFile.properties = properties;
     if (settings.amt_transforms) {
         const transforms = compileAMTTransforms();
